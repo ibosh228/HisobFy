@@ -1,130 +1,97 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { metrics, timeRanges, seriesByRange, aiInsights } from '../../data/demo'
-import LineChart from '../../components/LineChart'
+import { useAuth } from '../../context/AuthContext'
+import { fetchTransactions, computeMetrics, type Transaction } from '../../lib/business'
 
-const seriesMeta = [
-  { key: 'daromad', label: 'Daromad', color: 'var(--accent)' },
-  { key: 'xarajat', label: 'Xarajatlar', color: 'var(--danger)' },
-  { key: 'foyda', label: 'Foyda', color: 'var(--success)' },
-]
+function formatNumber(n: number) {
+  return Math.round(n).toLocaleString('en-US')
+}
 
-const toneColor: Record<string, string> = { danger: 'var(--danger)', warning: 'var(--warning)', success: 'var(--success)' }
+function EmptyState() {
+  const navigate = useNavigate()
+  return (
+    <div
+      className="flex flex-col items-center justify-center gap-3 rounded-xl border px-6 py-16 text-center"
+      style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
+    >
+      <span className="flex h-12 w-12 items-center justify-center rounded-full" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent)' }}>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M7 9l5-5 5 5M12 4v12" />
+        </svg>
+      </span>
+      <p className="font-display text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+        Hali moliyaviy ma‘lumot yo‘q
+      </p>
+      <p className="max-w-sm text-[13px]" style={{ color: 'var(--text-tertiary)' }}>
+        Excel yoki CSV faylingizni yuklang — shundan keyin bu yerda biznesingizning haqiqiy ko‘rsatkichlari paydo bo‘ladi.
+      </p>
+      <button
+        onClick={() => navigate('/dashboard/data')}
+        className="mt-2 rounded-lg px-4 py-2 text-[13px] font-semibold text-white transition-all duration-200 hover:brightness-110"
+        style={{ backgroundColor: 'var(--accent)' }}
+      >
+        Ma‘lumot yuklash
+      </button>
+    </div>
+  )
+}
 
 export default function Overview() {
-  const navigate = useNavigate()
-  const [range, setRange] = useState('30 kun')
-  const [visible, setVisible] = useState<Record<string, boolean>>({ daromad: true, xarajat: true, foyda: true })
+  const { business, loading: authLoading } = useAuth()
+  const [transactions, setTransactions] = useState<Transaction[] | null>(null)
 
-  const data = seriesByRange[range]
-  const activeSeries = seriesMeta.filter((s) => visible[s.key]).map((s) => ({ ...s, values: data[s.key as 'daromad' | 'xarajat' | 'foyda'] }))
+  useEffect(() => {
+    if (!business) return
+    fetchTransactions(business.id).then(setTransactions)
+  }, [business])
+
+  if (authLoading || transactions === null) {
+    return (
+      <div className="flex min-h-[300px] items-center justify-center">
+        <span className="text-[13px]" style={{ color: 'var(--text-tertiary)' }}>
+          Yuklanmoqda…
+        </span>
+      </div>
+    )
+  }
+
+  if (transactions.length === 0) {
+    return <EmptyState />
+  }
+
+  const metrics = computeMetrics(transactions)
+  const cards = [
+    { label: 'Daromad', value: metrics.revenue },
+    { label: 'Xarajatlar', value: metrics.expenses },
+    { label: 'Foyda', value: metrics.profit },
+    { label: 'Foyda marjasi', value: metrics.margin, isPercent: true },
+  ]
 
   return (
     <div className="flex flex-col gap-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {metrics.map((m) => (
-          <button
-            key={m.key}
-            onClick={() => navigate(`/dashboard/analytics?tab=${m.key}`)}
-            className="rounded-xl border p-4 text-left transition-colors duration-150"
-            style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
-            onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--border-strong)')}
-            onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
-          >
+        {cards.map((c) => (
+          <div key={c.label} className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
             <p className="text-[11.5px]" style={{ color: 'var(--text-tertiary)' }}>
-              {m.label}
+              {c.label}
             </p>
             <p className="font-mono mt-1.5 text-[15px] font-semibold sm:text-lg" style={{ color: 'var(--text-primary)' }}>
-              {m.value}
+              {c.isPercent ? c.value.toFixed(1) : formatNumber(c.value)}
               <span className="ml-1 text-[11px] font-normal" style={{ color: 'var(--text-tertiary)' }}>
-                {m.unit}
+                {c.isPercent ? '%' : 'UZS'}
               </span>
             </p>
-            <p className="font-mono mt-2 flex items-center gap-1 text-[11px] font-medium" style={{ color: m.up ? 'var(--success)' : 'var(--danger)' }}>
-              {m.up ? '↑' : '↓'} {m.change}
-              <span className="font-body font-normal" style={{ color: 'var(--text-tertiary)' }}>
-                o‘tgan oyga nisbatan
-              </span>
-            </p>
-          </button>
-        ))}
-      </div>
-
-      <div className="rounded-xl border p-5 sm:p-6" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="font-display text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-            Moliyaviy dinamika
-          </h2>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {seriesMeta.map((s) => (
-              <button
-                key={s.key}
-                onClick={() => setVisible((v) => ({ ...v, [s.key]: !v[s.key] }))}
-                className="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11.5px] transition-opacity duration-150"
-                style={{
-                  borderColor: visible[s.key] ? 'var(--border-strong)' : 'var(--border)',
-                  color: visible[s.key] ? 'var(--text-primary)' : 'var(--text-tertiary)',
-                  opacity: visible[s.key] ? 1 : 0.55,
-                }}
-              >
-                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: s.color }} />
-                {s.label}
-              </button>
-            ))}
           </div>
-        </div>
-
-        <div className="mt-4 flex gap-1.5 overflow-x-auto">
-          {timeRanges.map((r) => (
-            <button
-              key={r}
-              onClick={() => setRange(r)}
-              className="shrink-0 rounded-md px-3 py-1.5 text-[12px] font-medium transition-colors duration-150"
-              style={{
-                color: range === r ? 'white' : 'var(--text-secondary)',
-                backgroundColor: range === r ? 'var(--accent)' : 'transparent',
-              }}
-            >
-              {r}
-            </button>
-          ))}
-        </div>
-
-        <div className="mt-5">
-          <LineChart series={activeSeries} labels={data.labels} />
-        </div>
+        ))}
       </div>
 
       <div className="rounded-xl border p-5 sm:p-6" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
         <h2 className="font-display text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>
           AI tahlili
         </h2>
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          {aiInsights.map((it) => (
-            <div key={it.id} className="rounded-lg border p-4" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-elevated)' }}>
-              <div className="flex items-start gap-2.5">
-                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: toneColor[it.tone] }} />
-                <div>
-                  <p className="text-[13px] font-medium leading-tight" style={{ color: 'var(--text-primary)' }}>
-                    {it.title}
-                  </p>
-                  {it.lines.map((l) => (
-                    <p key={l} className="mt-1 text-[12px] leading-snug" style={{ color: 'var(--text-tertiary)' }}>
-                      {l}
-                    </p>
-                  ))}
-                </div>
-              </div>
-              <button
-                onClick={() => navigate(it.id === 'foyda' ? '/dashboard/analytics?tab=foyda' : '/dashboard/ai')}
-                className="mt-3 text-[12px] font-medium"
-                style={{ color: 'var(--accent)' }}
-              >
-                Batafsil ko‘rish →
-              </button>
-            </div>
-          ))}
-        </div>
+        <p className="mt-2 text-[13px]" style={{ color: 'var(--text-tertiary)' }}>
+          AI tahlili hozircha ishlab chiqilmoqda — tez orada shu yerda avtomatik tushuntirishlar paydo bo‘ladi.
+        </p>
       </div>
     </div>
   )

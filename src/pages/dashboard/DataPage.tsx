@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { uploadedFiles } from '../../data/demo'
 
 export default function DataPage() {
   const [dragOver, setDragOver] = useState(false)
@@ -43,33 +42,9 @@ export default function DataPage() {
         <h2 className="font-display text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>
           Yuklangan fayllar
         </h2>
-        <div className="mt-3 flex flex-col gap-2">
-          {uploadedFiles.map((f) => (
-            <div
-              key={f.name}
-              className="flex items-center justify-between rounded-lg border px-4 py-3"
-              style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
-            >
-              <div className="flex items-center gap-3">
-                <span className="flex h-8 w-8 items-center justify-center rounded-md" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent)' }}>
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                    <path d="M14 2v6h6" />
-                  </svg>
-                </span>
-                <span className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
-                  {f.name}
-                </span>
-              </div>
-              <span
-                className="rounded-full px-2.5 py-0.5 text-[11px] font-medium"
-                style={{ color: 'var(--success)', backgroundColor: 'color-mix(in srgb, var(--success) 12%, transparent)' }}
-              >
-                {f.status}
-              </span>
-            </div>
-          ))}
-        </div>
+        <p className="mt-3 rounded-lg border px-4 py-3 text-[13px]" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-tertiary)' }}>
+          Hali fayl yuklanmagan. Fayl yuklash funksiyasi tez orada ishga tushadi.
+        </p>
       </div>
     </div>
   )

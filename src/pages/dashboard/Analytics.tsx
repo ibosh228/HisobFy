@@ -1,148 +1,59 @@
-import { useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { timeRanges, seriesByRange } from '../../data/demo'
-import LineChart from '../../components/LineChart'
-
-const tabs = [
-  { key: 'daromad', label: 'Daromad', color: 'var(--accent)', value: '82.45M UZS', change: '+12.4%', up: true, best: 'May → Iyun' },
-  { key: 'xarajat', label: 'Xarajatlar', color: 'var(--danger)', value: '64.20M UZS', change: '+21.7%', up: true, best: 'Iyul → Avgust' },
-  { key: 'foyda', label: 'Foyda', color: 'var(--success)', value: '18.25M UZS', change: '-8.2%', up: false, best: 'Apr → May' },
-  { key: 'marja', label: 'Marja', color: 'var(--warning)', value: '22.1%', change: '-3.4%', up: false, best: 'Mar → Apr' },
-]
-
-const breakdownByTab: Record<string, { label: string; change: string }[]> = {
-  foyda: [
-    { label: 'Xarajatlar', change: '+21.7%' },
-    { label: 'Marketing', change: '+41%' },
-    { label: 'Yetkazib beruvchilar', change: '+19%' },
-    { label: 'Daromad', change: '+12.4%' },
-  ],
-  daromad: [
-    { label: 'Sotuv', change: '+14%' },
-    { label: 'Xizmat ko‘rsatish', change: '+9%' },
-  ],
-  xarajat: [
-    { label: 'Marketing', change: '+41%' },
-    { label: 'Yetkazib beruvchilar', change: '+19%' },
-    { label: 'Ijara', change: '+4%' },
-  ],
-  marja: [
-    { label: 'Xarajat/Daromad nisbati', change: '+6.1%' },
-  ],
-}
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext'
+import { fetchTransactions, type Transaction } from '../../lib/business'
 
 export default function Analytics() {
-  const [params] = useSearchParams()
-  const initialTab = params.get('tab') ?? 'daromad'
-  const [tab, setTab] = useState(tabs.some((t) => t.key === initialTab) ? initialTab : 'daromad')
-  const [range, setRange] = useState('30 kun')
+  const { business, loading: authLoading } = useAuth()
+  const navigate = useNavigate()
+  const [transactions, setTransactions] = useState<Transaction[] | null>(null)
 
-  const active = tabs.find((t) => t.key === tab)!
-  const data = seriesByRange[range]
-  const values = tab === 'marja' ? data.foyda.map((v, i) => Math.round((v / (data.daromad[i] || 1)) * 100)) : data[tab as 'daromad' | 'xarajat' | 'foyda']
+  useEffect(() => {
+    if (!business) return
+    fetchTransactions(business.id).then(setTransactions)
+  }, [business])
+
+  if (authLoading || transactions === null) {
+    return (
+      <div className="flex min-h-[300px] items-center justify-center">
+        <span className="text-[13px]" style={{ color: 'var(--text-tertiary)' }}>
+          Yuklanmoqda…
+        </span>
+      </div>
+    )
+  }
+
+  if (transactions.length === 0) {
+    return (
+      <div
+        className="flex flex-col items-center justify-center gap-3 rounded-xl border px-6 py-16 text-center"
+        style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
+      >
+        <span className="flex h-12 w-12 items-center justify-center rounded-full" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent)' }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path d="M3 3v18h18M7 15l4-4 3 3 5-6" />
+          </svg>
+        </span>
+        <p className="font-display text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+          Tahlil qilish uchun ma‘lumot yo‘q
+        </p>
+        <p className="max-w-sm text-[13px]" style={{ color: 'var(--text-tertiary)' }}>
+          Excel yoki CSV faylingizni yuklang — batafsil analitika shundan keyin ko‘rinadi.
+        </p>
+        <button
+          onClick={() => navigate('/dashboard/data')}
+          className="mt-2 rounded-lg px-4 py-2 text-[13px] font-semibold text-white transition-all duration-200 hover:brightness-110"
+          style={{ backgroundColor: 'var(--accent)' }}
+        >
+          Ma‘lumot yuklash
+        </button>
+      </div>
+    )
+  }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex gap-1.5 overflow-x-auto rounded-lg border p-1" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', width: 'fit-content' }}>
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className="shrink-0 rounded-md px-3.5 py-1.5 text-[12.5px] font-medium transition-colors duration-150"
-            style={{
-              color: tab === t.key ? 'white' : 'var(--text-secondary)',
-              backgroundColor: tab === t.key ? 'var(--accent)' : 'transparent',
-            }}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-xl border p-5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
-          <p className="text-[11.5px]" style={{ color: 'var(--text-tertiary)' }}>
-            {active.label}
-          </p>
-          <p className="font-mono mt-1.5 text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>
-            {active.value}
-          </p>
-          <p className="font-mono mt-2 text-[12px] font-medium" style={{ color: active.up ? 'var(--success)' : 'var(--danger)' }}>
-            {active.change}
-          </p>
-        </div>
-        <div className="rounded-xl border p-5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
-          <p className="text-[11.5px]" style={{ color: 'var(--text-tertiary)' }}>
-            Eng katta o‘sish
-          </p>
-          <p className="font-display mt-1.5 text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-            {active.best}
-          </p>
-        </div>
-        <div className="rounded-xl border p-5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
-          <p className="text-[11.5px]" style={{ color: 'var(--text-tertiary)' }}>
-            Oldingi davr bilan solishtirma
-          </p>
-          <p className="font-mono mt-1.5 text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-            {range}
-          </p>
-        </div>
-      </div>
-
-      <div className="rounded-xl border p-5 sm:p-6" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-display text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-            {active.label} dinamikasi
-          </h2>
-          <div className="flex gap-1.5 overflow-x-auto">
-            {[...timeRanges, 'Maxsus davr'].map((r) => (
-              <button
-                key={r}
-                onClick={() => timeRanges.includes(r) && setRange(r)}
-                className="shrink-0 rounded-md px-3 py-1.5 text-[12px] font-medium transition-colors duration-150"
-                style={{
-                  color: range === r ? 'white' : 'var(--text-secondary)',
-                  backgroundColor: range === r ? 'var(--accent)' : 'transparent',
-                }}
-              >
-                {r}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="mt-5">
-          <LineChart series={[{ key: tab, label: active.label, color: active.color, values }]} labels={data.labels} />
-        </div>
-      </div>
-
-      <div className="rounded-xl border p-5 sm:p-6" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
-        <h2 className="font-display text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-          Kategoriya bo‘yicha taqsimot
-        </h2>
-        <div className="mt-4 flex flex-col divide-y" style={{ borderColor: 'var(--border)' }}>
-          {(breakdownByTab[tab] ?? []).map((b) => (
-            <div key={b.label} className="flex items-center justify-between py-3" style={{ borderColor: 'var(--border)' }}>
-              <span className="text-[13px]" style={{ color: 'var(--text-secondary)' }}>
-                {b.label}
-              </span>
-              <span className="font-mono text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
-                {b.change}
-              </span>
-            </div>
-          ))}
-        </div>
-
-        {tab === 'foyda' && (
-          <div className="mt-5 rounded-lg border p-4" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-elevated)' }}>
-            <p className="text-[12px] font-medium" style={{ color: 'var(--text-tertiary)' }}>
-              AI izohi
-            </p>
-            <p className="mt-1.5 text-[13px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-              Foyda kamayishining asosiy sababi xarajatlarning daromadga nisbatan tezroq o‘sishidir.
-            </p>
-          </div>
-        )}
-      </div>
+    <div className="rounded-xl border p-6 text-[13px]" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-secondary)' }}>
+      Batafsil analitika tez orada shu yerda ko‘rinadi.
     </div>
   )
 }
