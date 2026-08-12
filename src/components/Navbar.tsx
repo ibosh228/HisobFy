@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import ThemeToggle from './ThemeToggle'
+import { useAuth } from '../context/AuthContext'
 
 type NavItem = {
   label: string
@@ -10,14 +11,17 @@ type NavItem = {
   prominent?: boolean
 }
 
-const navItems: NavItem[] = [
-  { label: 'Xususiyatlar', href: '#xususiyatlar', kind: 'anchor' },
-  { label: 'Narxlar', href: '#narxlar', kind: 'anchor' },
-  { label: 'AI', href: '#ai', kind: 'anchor', emphasize: true },
-  { label: 'Qanday ishlaydi', href: '#qanday-ishlaydi', kind: 'anchor' },
-  { label: 'Kabinet', href: '/dashboard', kind: 'link', prominent: true },
-  { label: 'Aloqa', href: '#aloqa', kind: 'anchor' },
-]
+function useNavItems(): NavItem[] {
+  const { user } = useAuth()
+  return [
+    { label: 'Xususiyatlar', href: '#xususiyatlar', kind: 'anchor' },
+    { label: 'Narxlar', href: '#narxlar', kind: 'anchor' },
+    { label: 'AI', href: '#ai', kind: 'anchor', emphasize: true },
+    { label: 'Qanday ishlaydi', href: '#qanday-ishlaydi', kind: 'anchor' },
+    { label: 'Kabinet', href: user ? '/dashboard' : '/login', kind: 'link', prominent: true },
+    { label: 'Aloqa', href: '#aloqa', kind: 'anchor' },
+  ]
+}
 
 function NavLinkItem({ item }: { item: NavItem }) {
   if (item.emphasize) {
@@ -67,6 +71,8 @@ export default function Navbar() {
   const [scrolled, setScrolled] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const navItems = useNavItems()
+  const { user, signOut } = useAuth()
 
   useEffect(() => {
     setMounted(true)
@@ -116,16 +122,29 @@ export default function Navbar() {
             </svg>
           </button>
           <ThemeToggle />
-          <Link to="/login" className="text-sm font-medium transition-colors duration-200" style={{ color: 'var(--text-primary)' }}>
-            Kirish
-          </Link>
-          <Link
-            to="/register"
-            className="rounded-lg px-4 py-2 text-sm font-semibold text-white transition-all duration-200 hover:brightness-110 active:scale-[0.98]"
-            style={{ backgroundColor: 'var(--accent)' }}
-          >
-            Bepul boshlash
-          </Link>
+          {user ? (
+            <button
+              type="button"
+              onClick={() => signOut()}
+              className="text-sm font-medium transition-colors duration-200"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              Chiqish
+            </button>
+          ) : (
+            <>
+              <Link to="/login" className="text-sm font-medium transition-colors duration-200" style={{ color: 'var(--text-primary)' }}>
+                Kirish
+              </Link>
+              <Link
+                to="/register"
+                className="rounded-lg px-4 py-2 text-sm font-semibold text-white transition-all duration-200 hover:brightness-110 active:scale-[0.98]"
+                style={{ backgroundColor: 'var(--accent)' }}
+              >
+                Bepul boshlash
+              </Link>
+            </>
+          )}
         </div>
 
         <button
@@ -175,19 +194,35 @@ export default function Navbar() {
             )
           )}
           <div className="mt-3 flex items-center justify-between border-t pt-4" style={{ borderColor: 'var(--border)' }}>
-            <Link to="/login" className="text-sm font-medium" style={{ color: 'var(--text-primary)' }} onClick={() => setMobileOpen(false)}>
-              Kirish
-            </Link>
+            {user ? (
+              <button
+                type="button"
+                onClick={() => {
+                  signOut()
+                  setMobileOpen(false)
+                }}
+                className="text-sm font-medium"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                Chiqish
+              </button>
+            ) : (
+              <Link to="/login" className="text-sm font-medium" style={{ color: 'var(--text-primary)' }} onClick={() => setMobileOpen(false)}>
+                Kirish
+              </Link>
+            )}
             <ThemeToggle />
           </div>
-          <Link
-            to="/register"
-            onClick={() => setMobileOpen(false)}
-            className="mt-3 w-full rounded-lg px-4 py-2.5 text-center text-sm font-semibold text-white"
-            style={{ backgroundColor: 'var(--accent)' }}
-          >
-            Bepul boshlash
-          </Link>
+          {!user && (
+            <Link
+              to="/register"
+              onClick={() => setMobileOpen(false)}
+              className="mt-3 w-full rounded-lg px-4 py-2.5 text-center text-sm font-semibold text-white"
+              style={{ backgroundColor: 'var(--accent)' }}
+            >
+              Bepul boshlash
+            </Link>
+          )}
         </div>
       </div>
     </header>

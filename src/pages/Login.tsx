@@ -1,13 +1,41 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import ThemeToggle from '../components/ThemeToggle'
+import { supabase } from '../lib/supabaseClient'
 
 export default function Login() {
   const [mounted, setMounted] = useState(false)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const navigate = useNavigate()
+
   useEffect(() => {
     const t = setTimeout(() => setMounted(true), 60)
     return () => clearTimeout(t)
   }, [])
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError(null)
+    setLoading(true)
+
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+
+    setLoading(false)
+
+    if (signInError) {
+      setError(
+        signInError.message === 'Invalid login credentials'
+          ? 'Email yoki parol noto‘g‘ri.'
+          : 'Kirishda xatolik yuz berdi. Qaytadan urinib ko‘ring.'
+      )
+      return
+    }
+
+    navigate('/dashboard')
+  }
 
   return (
     <div className="flex min-h-screen flex-col" style={{ backgroundColor: 'var(--bg)' }}>
@@ -30,11 +58,23 @@ export default function Login() {
               Hisobingizga kiring
             </h1>
 
-            <form className="mt-7 flex flex-col gap-4" onSubmit={(e) => e.preventDefault()}>
+            {error && (
+              <div
+                className="mt-5 rounded-lg border px-3.5 py-2.5 text-[13px]"
+                style={{ borderColor: 'var(--danger)', color: 'var(--danger)', backgroundColor: 'color-mix(in srgb, var(--danger) 10%, transparent)' }}
+              >
+                {error}
+              </div>
+            )}
+
+            <form className="mt-7 flex flex-col gap-4" onSubmit={handleSubmit}>
               <label className="flex flex-col gap-1.5 text-sm">
                 <span style={{ color: 'var(--text-secondary)' }}>Email</span>
                 <input
                   type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   className="rounded-lg border px-3.5 py-2.5 text-sm outline-none transition-colors duration-200 focus:border-[var(--accent)]"
                   style={{ borderColor: 'var(--border-strong)', backgroundColor: 'var(--bg-elevated)', color: 'var(--text-primary)' }}
                 />
@@ -43,6 +83,9 @@ export default function Login() {
                 <span style={{ color: 'var(--text-secondary)' }}>Parol</span>
                 <input
                   type="password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   className="rounded-lg border px-3.5 py-2.5 text-sm outline-none transition-colors duration-200 focus:border-[var(--accent)]"
                   style={{ borderColor: 'var(--border-strong)', backgroundColor: 'var(--bg-elevated)', color: 'var(--text-primary)' }}
                 />
@@ -50,10 +93,11 @@ export default function Login() {
 
               <button
                 type="submit"
-                className="mt-2 w-full rounded-lg py-2.5 text-sm font-semibold text-white transition-all duration-200 hover:brightness-110 active:scale-[0.98]"
+                disabled={loading}
+                className="mt-2 w-full rounded-lg py-2.5 text-sm font-semibold text-white transition-all duration-200 hover:brightness-110 active:scale-[0.98] disabled:opacity-60"
                 style={{ backgroundColor: 'var(--accent)' }}
               >
-                Kirish
+                {loading ? 'Kirilmoqda…' : 'Kirish'}
               </button>
             </form>
 

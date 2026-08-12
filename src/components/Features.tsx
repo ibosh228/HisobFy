@@ -74,7 +74,7 @@ function UploadVisual() {
           moliya_2026.xlsx
         </p>
         <p className="text-[10.5px]" style={{ color: 'var(--text-tertiary)' }}>
-          Yuklanmoqda\u2026
+          Yuklanmoqda…
         </p>
       </div>
     </div>

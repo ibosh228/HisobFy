@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import ThemeToggle from '../../components/ThemeToggle'
+import { useAuth } from '../../context/AuthContext'
 
 const navItems = [
   { to: '/dashboard', label: 'Umumiy ko‘rinish', icon: <path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z" />, end: true },
@@ -21,6 +22,15 @@ const titles: Record<string, { title: string; subtitle: string }> = {
 }
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
+  const { user, signOut } = useAuth()
+  const initials = (user?.user_metadata?.name as string | undefined)
+    ?.trim()
+    .split(/\s+/)
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase() || 'DB'
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 px-5 py-5">
@@ -58,17 +68,31 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold"
             style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent)' }}
           >
-            DB
+            {initials}
           </span>
           <div className="min-w-0">
             <p className="truncate text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
               Demo Business
             </p>
             <p className="truncate text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
-              demo@example.com
+              {user?.email ?? 'demo@example.com'}
             </p>
           </div>
         </div>
+        <button
+          type="button"
+          onClick={() => {
+            signOut()
+            onNavigate?.()
+          }}
+          className="mt-3 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[12.5px] transition-colors duration-150"
+          style={{ color: 'var(--text-secondary)' }}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
+          </svg>
+          Chiqish
+        </button>
       </div>
     </div>
   )
@@ -78,6 +102,14 @@ export default function DashboardLayout() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const location = useLocation()
   const meta = titles[location.pathname] ?? titles['/dashboard']
+  const { user } = useAuth()
+  const initials = (user?.user_metadata?.name as string | undefined)
+    ?.trim()
+    .split(/\s+/)
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase() || 'DB'
 
   return (
     <div className="flex min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
@@ -164,7 +196,7 @@ export default function DashboardLayout() {
               className="flex h-8 w-8 items-center justify-center rounded-full text-[12px] font-semibold"
               style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent)' }}
             >
-              DB
+              {initials}
             </span>
           </div>
         </header>
