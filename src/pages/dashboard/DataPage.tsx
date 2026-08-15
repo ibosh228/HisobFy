@@ -1,50 +1,38 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
-
-interface UploadedFile {
-  id: string
-  name: string
-  sizeLabel: string
-  status: 'Yuklanmoqda…' | 'Qayta ishlangan' | 'Xatolik'
-}
+import { parseFile, guessColumn, type ParsedFile } from '../../lib/fileParser'
+import { buildTransactionsFromRows, insertTransactions, type ColumnMapping } from '../../lib/business'
 
 const ALLOWED_EXTENSIONS = ['.xlsx', '.csv']
-
-function formatSize(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
+type Step = 'upload' | 'mapping' | 'result'
 
 export default function DataPage() {
   const { business } = useAuth()
   const { showToast } = useToast()
-  const [dragOver, setDragOver] = useState(false)
-  const [files, setFiles] = useState<UploadedFile[]>([])
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const navigate = useNavigate()
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const storageKey = business ? `hisobfy-files-${business.id}` : null
+  const [dragOver, setDragOver] = useState(false)
+  const [step, setStep] = useState<Step>('upload')
+  const [fileName, setFileName] = useState('')
+  const [parsed, setParsed] = useState<ParsedFile | null>(null)
+  const [mapping, setMapping] = useState<ColumnMapping | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [result, setResult] = useState<{ validCount: number; invalidCount: number } | null>(null)
+  const [parseError, setParseError] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (!storageKey) return
-    const raw = localStorage.getItem(storageKey)
-    if (raw) {
-      try {
-        setFiles(JSON.parse(raw))
-      } catch {
-        /* ignore */
-      }
-    }
-  }, [storageKey])
-
-  const persist = (next: UploadedFile[]) => {
-    setFiles(next)
-    if (storageKey) localStorage.setItem(storageKey, JSON.stringify(next))
+  const reset = () => {
+    setStep('upload')
+    setFileName('')
+    setParsed(null)
+    setMapping(null)
+    setResult(null)
+    setParseError(null)
   }
 
-  const handleFiles = (fileList: FileList | null) => {
+  const handleFiles = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return
     const file = fileList[0]
     const ext = '.' + file.name.split('.').pop()?.toLowerCase()
@@ -54,161 +42,275 @@ export default function DataPage() {
       return
     }
 
-    const id = Date.now().toString()
-    const entry: UploadedFile = { id, name: file.name, sizeLabel: formatSize(file.size), status: 'Yuklanmoqda…' }
-    const next = [entry, ...files]
-    persist(next)
-    showToast('Fayl qo‘shildi')
+    setFileName(file.name)
+    setParseError(null)
 
-    setTimeout(() => {
-      persist(next.map((f) => (f.id === id ? { ...f, status: 'Qayta ishlangan' as const } : f)))
-    }, 1400)
+    try {
+      const result = await parseFile(file)
+      if (result.headers.length === 0 || result.rows.length === 0) {
+        setParseError('Faylda ma‘lumot topilmadi. Birinchi qator ustun nomlari bo‘lishi kerak.')
+        return
+      }
+      setParsed(result)
+      setMapping({
+        date: guessColumn(result.headers, 'date') ?? result.headers[0],
+        description: guessColumn(result.headers, 'description') ?? result.headers[0],
+        category: guessColumn(result.headers, 'category') ?? result.headers[0],
+        amount: guessColumn(result.headers, 'amount') ?? result.headers[0],
+        typeMode: guessColumn(result.headers, 'type') ? 'column' : 'sign',
+        typeColumn: guessColumn(result.headers, 'type') ?? undefined,
+        incomeValue: undefined,
+      })
+      setStep('mapping')
+    } catch {
+      setParseError('Faylni o‘qib bo‘lmadi. Fayl buzilgan yoki noto‘g‘ri formatda bo‘lishi mumkin.')
+    }
   }
 
-  const confirmDelete = (id: string) => {
-    persist(files.filter((f) => f.id !== id))
-    setConfirmDeleteId(null)
-    showToast('Fayl o‘chirildi')
+  const distinctTypeValues = mapping?.typeColumn && parsed
+    ? Array.from(new Set(parsed.rows.map((r) => (r[mapping.typeColumn!] ?? '').trim()).filter(Boolean))).slice(0, 12)
+    : []
+
+  const handleImport = async () => {
+    if (!parsed || !mapping || !business) return
+    setImporting(true)
+
+    const { valid, invalidCount } = buildTransactionsFromRows(parsed.rows, mapping)
+
+    if (valid.length === 0) {
+      setImporting(false)
+      setResult({ validCount: 0, invalidCount })
+      setStep('result')
+      return
+    }
+
+    const { error } = await insertTransactions(business.id, valid)
+    setImporting(false)
+
+    if (error) {
+      showToast('Ma‘lumotni saqlashda xatolik yuz berdi', 'error')
+      return
+    }
+
+    setResult({ validCount: valid.length, invalidCount })
+    setStep('result')
+    showToast('Ma‘lumot muvaffaqiyatli yuklandi')
   }
 
   return (
     <div className="flex flex-col gap-6">
-      <div
-        className="flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed px-6 py-14 text-center transition-colors duration-150"
-        style={{ borderColor: dragOver ? 'var(--accent)' : 'var(--border-strong)', backgroundColor: dragOver ? 'var(--accent-soft)' : 'var(--surface)' }}
-        onDragOver={(e) => {
-          e.preventDefault()
-          setDragOver(true)
-        }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => {
-          e.preventDefault()
-          setDragOver(false)
-          handleFiles(e.dataTransfer.files)
-        }}
-      >
-        <span className="flex h-12 w-12 items-center justify-center rounded-full" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent)' }}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-            <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M7 9l5-5 5 5M12 4v12" />
-          </svg>
-        </span>
-        <p className="font-display text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-          Excel yoki CSV faylni yuklang
-        </p>
-        <p className="text-[13px]" style={{ color: 'var(--text-tertiary)' }}>
-          Faylni shu yerga tashlang yoki tanlang
-        </p>
-        <input
-          ref={inputRef}
-          type="file"
-          accept=".xlsx,.csv"
-          className="hidden"
-          onChange={(e) => {
-            handleFiles(e.target.files)
-            e.target.value = ''
-          }}
-        />
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          className="mt-2 rounded-lg px-4 py-2 text-[13px] font-semibold text-white transition-all duration-200 hover:brightness-110"
-          style={{ backgroundColor: 'var(--accent)' }}
-        >
-          Fayl tanlash
-        </button>
-      </div>
+      {step === 'upload' && (
+        <>
+          <div
+            className="flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed px-6 py-14 text-center transition-colors duration-150"
+            style={{ borderColor: dragOver ? 'var(--accent)' : 'var(--border-strong)', backgroundColor: dragOver ? 'var(--accent-soft)' : 'var(--surface)' }}
+            onDragOver={(e) => {
+              e.preventDefault()
+              setDragOver(true)
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault()
+              setDragOver(false)
+              handleFiles(e.dataTransfer.files)
+            }}
+          >
+            <span className="flex h-12 w-12 items-center justify-center rounded-full" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent)' }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M7 9l5-5 5 5M12 4v12" />
+              </svg>
+            </span>
+            <p className="font-display text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+              Excel yoki CSV faylni yuklang
+            </p>
+            <p className="text-[13px]" style={{ color: 'var(--text-tertiary)' }}>
+              Faylni shu yerga tashlang yoki tanlang
+            </p>
+            <input
+              ref={inputRef}
+              type="file"
+              accept=".xlsx,.csv"
+              className="hidden"
+              onChange={(e) => {
+                handleFiles(e.target.files)
+                e.target.value = ''
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              className="mt-2 rounded-lg px-4 py-2 text-[13px] font-semibold text-white transition-all duration-200 hover:brightness-110"
+              style={{ backgroundColor: 'var(--accent)' }}
+            >
+              Fayl tanlash
+            </button>
+          </div>
 
-      <div>
-        <h2 className="font-display text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-          Yuklangan fayllar
-        </h2>
+          {parseError && (
+            <div
+              className="rounded-lg border px-4 py-3 text-[13px]"
+              style={{ borderColor: 'var(--danger)', color: 'var(--danger)', backgroundColor: 'color-mix(in srgb, var(--danger) 10%, transparent)' }}
+            >
+              {fileName}: {parseError}
+            </div>
+          )}
 
-        {files.length === 0 ? (
-          <p className="mt-3 rounded-lg border px-4 py-3 text-[13px]" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-tertiary)' }}>
-            Hali fayl yuklanmagan.
+          <div className="rounded-lg border px-4 py-3 text-[12.5px]" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-tertiary)' }}>
+            Birinchi qatorda ustun nomlari bo‘lishi kerak (masalan: Sana, Tavsif, Kategoriya, Tur, Summa). Yuklagandan keyin ustunlarni tasdiqlash imkoniyati bo‘ladi.
+          </div>
+        </>
+      )}
+
+      {step === 'mapping' && parsed && mapping && (
+        <div className="rounded-xl border p-5 sm:p-6" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+          <h2 className="font-display text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+            Ustunlarni moslashtiring
+          </h2>
+          <p className="mt-1.5 text-[13px]" style={{ color: 'var(--text-tertiary)' }}>
+            {fileName} — {parsed.rows.length} qator topildi. Har bir maydon qaysi ustunga mos kelishini tekshiring.
           </p>
-        ) : (
-          <div className="mt-3 flex flex-col gap-2">
-            {files.map((f) => (
-              <div
-                key={f.id}
-                className="flex items-center justify-between rounded-lg border px-4 py-3"
-                style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent)' }}>
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                      <path d="M14 2v6h6" />
-                    </svg>
-                  </span>
-                  <div className="min-w-0">
-                    <p className="truncate text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
-                      {f.name}
-                    </p>
-                    <p className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
-                      {f.sizeLabel}
-                    </p>
-                  </div>
-                </div>
 
-                <div className="flex shrink-0 items-center gap-2">
-                  <span
-                    className="rounded-full px-2.5 py-0.5 text-[11px] font-medium"
-                    style={{
-                      color: f.status === 'Qayta ishlangan' ? 'var(--success)' : f.status === 'Xatolik' ? 'var(--danger)' : 'var(--text-tertiary)',
-                      backgroundColor:
-                        f.status === 'Qayta ishlangan'
-                          ? 'color-mix(in srgb, var(--success) 12%, transparent)'
-                          : f.status === 'Xatolik'
-                            ? 'color-mix(in srgb, var(--danger) 12%, transparent)'
-                            : 'var(--bg-elevated)',
-                    }}
-                  >
-                    {f.status}
-                  </span>
-                  <button
-                    onClick={() => setConfirmDeleteId(f.id)}
-                    className="flex h-7 w-7 items-center justify-center rounded-md"
-                    style={{ color: 'var(--text-tertiary)' }}
-                    aria-label="O‘chirish"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                      <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            {[
+              { key: 'date' as const, label: 'Sana' },
+              { key: 'description' as const, label: 'Tavsif' },
+              { key: 'category' as const, label: 'Kategoriya' },
+              { key: 'amount' as const, label: 'Summa' },
+            ].map((f) => (
+              <label key={f.key} className="flex flex-col gap-1.5 text-sm">
+                <span style={{ color: 'var(--text-secondary)' }}>{f.label}</span>
+                <select
+                  value={mapping[f.key]}
+                  onChange={(e) => setMapping({ ...mapping, [f.key]: e.target.value })}
+                  className="rounded-lg border px-3 py-2 text-[13px] outline-none"
+                  style={{ borderColor: 'var(--border-strong)', backgroundColor: 'var(--bg-elevated)', color: 'var(--text-primary)' }}
+                >
+                  {parsed.headers.map((h) => (
+                    <option key={h} value={h}>
+                      {h}
+                    </option>
+                  ))}
+                </select>
+              </label>
             ))}
           </div>
-        )}
-      </div>
 
-      {confirmDeleteId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-          <div className="w-full max-w-sm rounded-xl border p-6" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
-            <p className="font-display text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-              Faylni o‘chirasizmi?
+          <div className="mt-5 rounded-lg border p-4" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-elevated)' }}>
+            <p className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
+              Daromad va xarajatni qanday ajratamiz?
             </p>
-            <p className="mt-2 text-[13px]" style={{ color: 'var(--text-tertiary)' }}>
-              Bu amalni orqaga qaytarib bo‘lmaydi.
-            </p>
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                onClick={() => setConfirmDeleteId(null)}
-                className="rounded-lg border px-4 py-2 text-[13px] font-medium"
-                style={{ borderColor: 'var(--border-strong)', color: 'var(--text-secondary)' }}
-              >
-                Bekor qilish
-              </button>
-              <button
-                onClick={() => confirmDelete(confirmDeleteId)}
-                className="rounded-lg px-4 py-2 text-[13px] font-semibold text-white"
-                style={{ backgroundColor: 'var(--danger)' }}
-              >
-                O‘chirish
-              </button>
+            <div className="mt-3 flex flex-col gap-3">
+              <label className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--text-secondary)' }}>
+                <input
+                  type="radio"
+                  checked={mapping.typeMode === 'sign'}
+                  onChange={() => setMapping({ ...mapping, typeMode: 'sign' })}
+                />
+                Summa belgisidan (musbat = daromad, manfiy = xarajat)
+              </label>
+              <label className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--text-secondary)' }}>
+                <input
+                  type="radio"
+                  checked={mapping.typeMode === 'column'}
+                  onChange={() => setMapping({ ...mapping, typeMode: 'column' })}
+                />
+                Alohida ustundan
+              </label>
+
+              {mapping.typeMode === 'column' && (
+                <div className="ml-6 flex flex-col gap-3 sm:flex-row">
+                  <label className="flex flex-col gap-1.5 text-sm">
+                    <span style={{ color: 'var(--text-secondary)' }}>Ustun</span>
+                    <select
+                      value={mapping.typeColumn ?? ''}
+                      onChange={(e) => setMapping({ ...mapping, typeColumn: e.target.value, incomeValue: undefined })}
+                      className="rounded-lg border px-3 py-2 text-[13px] outline-none"
+                      style={{ borderColor: 'var(--border-strong)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }}
+                    >
+                      <option value="">Tanlang</option>
+                      {parsed.headers.map((h) => (
+                        <option key={h} value={h}>
+                          {h}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1.5 text-sm">
+                    <span style={{ color: 'var(--text-secondary)' }}>Qaysi qiymat "Daromad"?</span>
+                    <select
+                      value={mapping.incomeValue ?? ''}
+                      onChange={(e) => setMapping({ ...mapping, incomeValue: e.target.value })}
+                      className="rounded-lg border px-3 py-2 text-[13px] outline-none"
+                      style={{ borderColor: 'var(--border-strong)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }}
+                    >
+                      <option value="">Tanlang</option>
+                      {distinctTypeValues.map((v) => (
+                        <option key={v} value={v}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              )}
             </div>
+          </div>
+
+          <div className="mt-6 flex gap-3">
+            <button
+              onClick={reset}
+              className="rounded-lg border px-4 py-2 text-[13px] font-medium"
+              style={{ borderColor: 'var(--border-strong)', color: 'var(--text-secondary)' }}
+            >
+              Bekor qilish
+            </button>
+            <button
+              onClick={handleImport}
+              disabled={importing || (mapping.typeMode === 'column' && (!mapping.typeColumn || !mapping.incomeValue))}
+              className="rounded-lg px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50"
+              style={{ backgroundColor: 'var(--accent)' }}
+            >
+              {importing ? 'Yuklanmoqda…' : 'Tasdiqlash va yuklash'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === 'result' && result && (
+        <div className="flex flex-col items-center justify-center gap-3 rounded-xl border px-6 py-14 text-center" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+          <span
+            className="flex h-12 w-12 items-center justify-center rounded-full"
+            style={{ backgroundColor: result.validCount > 0 ? 'color-mix(in srgb, var(--success) 15%, transparent)' : 'color-mix(in srgb, var(--danger) 15%, transparent)', color: result.validCount > 0 ? 'var(--success)' : 'var(--danger)' }}
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+              {result.validCount > 0 ? <path d="M20 6L9 17l-5-5" /> : <path d="M18 6L6 18M6 6l12 12" />}
+            </svg>
+          </span>
+          <p className="font-display text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+            {result.validCount > 0 ? `${result.validCount} ta yozuv muvaffaqiyatli yuklandi` : 'Hech qanday yozuv yuklanmadi'}
+          </p>
+          {result.invalidCount > 0 && (
+            <p className="text-[13px]" style={{ color: 'var(--text-tertiary)' }}>
+              {result.invalidCount} ta qatorda xato bor edi (sana, summa yoki tavsif to‘liq emas) — ular o‘tkazib yuborildi.
+            </p>
+          )}
+          <div className="mt-3 flex gap-3">
+            <button
+              onClick={reset}
+              className="rounded-lg border px-4 py-2 text-[13px] font-medium"
+              style={{ borderColor: 'var(--border-strong)', color: 'var(--text-secondary)' }}
+            >
+              Yana fayl yuklash
+            </button>
+            {result.validCount > 0 && (
+              <button
+                onClick={() => navigate('/dashboard')}
+                className="rounded-lg px-4 py-2 text-[13px] font-semibold text-white"
+                style={{ backgroundColor: 'var(--accent)' }}
+              >
+                Umumiy ko‘rinishga o‘tish
+              </button>
+            )}
           </div>
         </div>
       )}

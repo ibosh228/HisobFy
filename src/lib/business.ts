@@ -68,3 +68,88 @@ export function computeMetrics(transactions: Transaction[]): FinancialMetrics {
   const margin = revenue > 0 ? (profit / revenue) * 100 : 0
   return { revenue, expenses, profit, margin }
 }
+
+export interface ColumnMapping {
+  date: string
+  description: string
+  category: string
+  amount: string
+  typeMode: 'column' | 'sign'
+  typeColumn?: string
+  incomeValue?: string
+}
+
+export interface ImportResult {
+  validCount: number
+  invalidCount: number
+  inserted: boolean
+  error?: string
+}
+
+function normalizeDate(raw: string): string | null {
+  const s = raw.trim()
+  if (!s) return null
+
+  // YYYY-MM-DD yoki YYYY/MM/DD
+  let m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/)
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`
+
+  // DD.MM.YYYY yoki DD/MM/YYYY
+  m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/)
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`
+
+  const parsed = Date.parse(s)
+  if (!isNaN(parsed)) return new Date(parsed).toISOString().slice(0, 10)
+
+  return null
+}
+
+function normalizeAmount(raw: string): number | null {
+  let s = raw.trim().replace(/\s/g, '').replace(/,/g, '')
+  if (!s) return null
+  const n = parseFloat(s)
+  if (isNaN(n)) return null
+  return n
+}
+
+export function buildTransactionsFromRows(
+  rows: Record<string, string>[],
+  mapping: ColumnMapping
+): { valid: Omit<Transaction, 'id' | 'business_id'>[]; invalidCount: number } {
+  const valid: Omit<Transaction, 'id' | 'business_id'>[] = []
+  let invalidCount = 0
+
+  for (const row of rows) {
+    const date = normalizeDate(row[mapping.date] ?? '')
+    const description = (row[mapping.description] ?? '').trim()
+    const category = (row[mapping.category] ?? '').trim() || 'Boshqa'
+    const amountRaw = normalizeAmount(row[mapping.amount] ?? '')
+
+    if (!date || !description || amountRaw === null) {
+      invalidCount++
+      continue
+    }
+
+    let type: 'income' | 'expense'
+    let amount = amountRaw
+
+    if (mapping.typeMode === 'sign') {
+      type = amountRaw >= 0 ? 'income' : 'expense'
+      amount = Math.abs(amountRaw)
+    } else {
+      const typeValue = (row[mapping.typeColumn ?? ''] ?? '').trim()
+      type = typeValue === mapping.incomeValue ? 'income' : 'expense'
+      amount = Math.abs(amountRaw)
+    }
+
+    valid.push({ date, description, category, type, amount, currency: 'UZS' })
+  }
+
+  return { valid, invalidCount }
+}
+
+export async function insertTransactions(businessId: string, transactions: Omit<Transaction, 'id' | 'business_id'>[]) {
+  const rows = transactions.map((t) => ({ ...t, business_id: businessId }))
+  const { error } = await supabase.from('transactions').insert(rows)
+  return { error }
+}
