@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { fetchTransactions, computeMetrics, type Transaction } from '../../lib/business'
+import { fetchTransactions, computeMetrics, groupByMonth, groupByCategory, type Transaction } from '../../lib/business'
+import LineChart from '../../components/LineChart'
 
 function formatNumber(n: number) {
   return Math.round(n).toLocaleString('en-US')
@@ -60,16 +61,54 @@ export default function Overview() {
   }
 
   const metrics = computeMetrics(transactions)
+  const monthly = groupByMonth(transactions)
+  const topExpenseCategories = groupByCategory(transactions, 'expense')
+  const topIncomeCategories = groupByCategory(transactions, 'income')
+
   const cards = [
-    { label: 'Daromad', value: metrics.revenue },
-    { label: 'Xarajatlar', value: metrics.expenses },
-    { label: 'Foyda', value: metrics.profit },
-    { label: 'Foyda marjasi', value: metrics.margin, isPercent: true },
+    { label: 'Daromad', value: metrics.revenue, unit: 'UZS' },
+    { label: 'Foyda', value: metrics.profit, unit: 'UZS' },
+    { label: 'Xarajatlar', value: metrics.expenses, unit: 'UZS' },
+    { label: 'Foyda marjasi', value: metrics.margin, unit: '%', isPercent: true },
   ]
 
+  const insights: { title: string; detail: string; color: string }[] = []
+
+  if (topExpenseCategories.length > 0) {
+    const top = topExpenseCategories[0]
+    insights.push({
+      title: `Eng katta xarajat: ${top.category}`,
+      detail: `Jami xarajatlarning ${top.share.toFixed(0)}% ni tashkil qiladi (${formatNumber(top.total)} UZS).`,
+      color: 'var(--danger)',
+    })
+  }
+
+  if (metrics.expenses > metrics.revenue) {
+    insights.push({
+      title: 'Xarajatlar daromaddan yuqori',
+      detail: 'Bu davrda xarajatlar daromaddan ko‘p bo‘lgan — moliyaviy holatni ko‘rib chiqish tavsiya etiladi.',
+      color: 'var(--warning)',
+    })
+  } else if (metrics.margin > 0) {
+    insights.push({
+      title: 'Ijobiy foyda marjasi',
+      detail: `Joriy foyda marjasi ${metrics.margin.toFixed(1)}% ni tashkil qiladi.`,
+      color: 'var(--success)',
+    })
+  }
+
+  if (topIncomeCategories.length > 0) {
+    const top = topIncomeCategories[0]
+    insights.push({
+      title: `Eng katta daromad manbai: ${top.category}`,
+      detail: `Jami daromadning ${top.share.toFixed(0)}% ni tashkil qiladi.`,
+      color: 'var(--accent)',
+    })
+  }
+
   return (
-    <div className="flex flex-col gap-6">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-2 gap-3">
         {cards.map((c) => (
           <div key={c.label} className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
             <p className="text-[11.5px]" style={{ color: 'var(--text-tertiary)' }}>
@@ -78,20 +117,59 @@ export default function Overview() {
             <p className="font-mono mt-1.5 text-[15px] font-semibold sm:text-lg" style={{ color: 'var(--text-primary)' }}>
               {c.isPercent ? c.value.toFixed(1) : formatNumber(c.value)}
               <span className="ml-1 text-[11px] font-normal" style={{ color: 'var(--text-tertiary)' }}>
-                {c.isPercent ? '%' : 'UZS'}
+                {c.unit}
               </span>
             </p>
           </div>
         ))}
       </div>
 
-      <div className="rounded-xl border p-5 sm:p-6" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
-        <h2 className="font-display text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-          AI tahlili
-        </h2>
-        <p className="mt-2 text-[13px]" style={{ color: 'var(--text-tertiary)' }}>
-          AI tahlili hozircha ishlab chiqilmoqda — tez orada shu yerda avtomatik tushuntirishlar paydo bo‘ladi.
-        </p>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+        <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+          <p className="text-[12.5px] font-medium" style={{ color: 'var(--text-tertiary)' }}>
+            AI tahlili
+          </p>
+          <div className="mt-3 flex flex-col gap-3">
+            {insights.length === 0 ? (
+              <p className="text-[12.5px]" style={{ color: 'var(--text-tertiary)' }}>
+                Xulosa chiqarish uchun ma‘lumot yetarli emas.
+              </p>
+            ) : (
+              insights.map((it) => (
+                <div key={it.title} className="flex items-start gap-2.5">
+                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: it.color }} />
+                  <div>
+                    <p className="text-[12.5px] font-medium leading-tight" style={{ color: 'var(--text-primary)' }}>
+                      {it.title}
+                    </p>
+                    <p className="mt-0.5 text-[11.5px] leading-snug" style={{ color: 'var(--text-tertiary)' }}>
+                      {it.detail}
+                    </p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+          <p className="mb-2 text-[12.5px] font-medium" style={{ color: 'var(--text-tertiary)' }}>
+            Moliyaviy dinamika
+          </p>
+          {monthly.labels.length < 2 ? (
+            <p className="mt-6 text-[12.5px]" style={{ color: 'var(--text-tertiary)' }}>
+              Grafik ko‘rsatish uchun kamida 2 oylik ma‘lumot kerak.
+            </p>
+          ) : (
+            <LineChart
+              series={[
+                { key: 'daromad', label: 'Daromad', color: 'var(--accent)', values: monthly.daromad },
+                { key: 'foyda', label: 'Foyda', color: 'var(--success)', values: monthly.foyda },
+              ]}
+              labels={monthly.labels}
+            />
+          )}
+        </div>
       </div>
     </div>
   )

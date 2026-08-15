@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { fetchTransactions, type Transaction } from '../../lib/business'
 
 export default function Transactions() {
   const { business } = useAuth()
+  const [params] = useSearchParams()
   const [transactions, setTransactions] = useState<Transaction[] | null>(null)
   const [search, setSearch] = useState('')
+  const [category, setCategory] = useState(params.get('category') ?? '')
   const [type, setType] = useState<'Barchasi' | 'income' | 'expense'>('Barchasi')
   const [page, setPage] = useState(1)
   const perPage = 8
@@ -19,10 +22,11 @@ export default function Transactions() {
     if (!transactions) return []
     return transactions.filter((t) => {
       if (search && !t.description.toLowerCase().includes(search.toLowerCase())) return false
+      if (category && t.category !== category) return false
       if (type !== 'Barchasi' && t.type !== type) return false
       return true
     })
-  }, [transactions, search, type])
+  }, [transactions, search, category, type])
 
   if (transactions === null) {
     return (
@@ -39,6 +43,22 @@ export default function Transactions() {
 
   return (
     <div className="flex flex-col gap-5">
+      {category && (
+        <div className="flex items-center gap-2 text-[12.5px]" style={{ color: 'var(--text-secondary)' }}>
+          Filtr:
+          <span
+            className="flex items-center gap-1.5 rounded-full border px-2.5 py-1"
+            style={{ borderColor: 'var(--accent-border)', backgroundColor: 'var(--accent-soft)', color: 'var(--accent)' }}
+          >
+            {category}
+            <button onClick={() => setCategory('')} aria-label="Filtrni tozalash">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </span>
+        </div>
+      )}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative w-full sm:w-72">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.8" className="absolute left-3 top-1/2 -translate-y-1/2">

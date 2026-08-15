@@ -153,3 +153,57 @@ export async function insertTransactions(businessId: string, transactions: Omit<
   const { error } = await supabase.from('transactions').insert(rows)
   return { error }
 }
+
+export interface MonthlySeries {
+  labels: string[]
+  daromad: number[]
+  xarajat: number[]
+  foyda: number[]
+}
+
+const MONTH_NAMES = ['Yan', 'Fev', 'Mar', 'Apr', 'May', 'Iyun', 'Iyul', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek']
+
+export function groupByMonth(transactions: Transaction[]): MonthlySeries {
+  const buckets = new Map<string, { daromad: number; xarajat: number }>()
+
+  for (const t of transactions) {
+    const d = new Date(t.date)
+    if (isNaN(d.getTime())) continue
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    const bucket = buckets.get(key) ?? { daromad: 0, xarajat: 0 }
+    if (t.type === 'income') bucket.daromad += Number(t.amount)
+    else bucket.xarajat += Number(t.amount)
+    buckets.set(key, bucket)
+  }
+
+  const sortedKeys = Array.from(buckets.keys()).sort()
+  const labels = sortedKeys.map((k) => {
+    const [, m] = k.split('-')
+    return MONTH_NAMES[parseInt(m, 10) - 1]
+  })
+  const daromad = sortedKeys.map((k) => buckets.get(k)!.daromad)
+  const xarajat = sortedKeys.map((k) => buckets.get(k)!.xarajat)
+  const foyda = daromad.map((d, i) => d - xarajat[i])
+
+  return { labels, daromad, xarajat, foyda }
+}
+
+export interface CategoryTotal {
+  category: string
+  total: number
+  share: number
+}
+
+export function groupByCategory(transactions: Transaction[], type: 'income' | 'expense'): CategoryTotal[] {
+  const filtered = transactions.filter((t) => t.type === type)
+  const total = filtered.reduce((sum, t) => sum + Number(t.amount), 0)
+  const map = new Map<string, number>()
+
+  for (const t of filtered) {
+    map.set(t.category, (map.get(t.category) ?? 0) + Number(t.amount))
+  }
+
+  return Array.from(map.entries())
+    .map(([category, amount]) => ({ category, total: amount, share: total > 0 ? (amount / total) * 100 : 0 }))
+    .sort((a, b) => b.total - a.total)
+}
