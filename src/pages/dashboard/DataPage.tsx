@@ -1,9 +1,9 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { parseFile, guessColumn, type ParsedFile } from '../../lib/fileParser'
-import { buildTransactionsFromRows, insertTransactions, type ColumnMapping } from '../../lib/business'
+import { buildTransactionsFromRows, insertTransactions, deleteAllTransactions, countTransactions, type ColumnMapping } from '../../lib/business'
 
 const ALLOWED_EXTENSIONS = ['.xlsx', '.csv']
 type Step = 'upload' | 'mapping' | 'result'
@@ -22,6 +22,30 @@ export default function DataPage() {
   const [importing, setImporting] = useState(false)
   const [result, setResult] = useState<{ validCount: number; invalidCount: number } | null>(null)
   const [parseError, setParseError] = useState<string | null>(null)
+  const [existingCount, setExistingCount] = useState<number | null>(null)
+  const [confirmClear, setConfirmClear] = useState(false)
+  const [clearing, setClearing] = useState(false)
+
+  useEffect(() => {
+    if (!business) return
+    countTransactions(business.id).then(setExistingCount)
+  }, [business, step])
+
+  const handleClearAll = async () => {
+    if (!business) return
+    setClearing(true)
+    const { error } = await deleteAllTransactions(business.id)
+    setClearing(false)
+    setConfirmClear(false)
+
+    if (error) {
+      showToast('Xatolik yuz berdi', 'error')
+      return
+    }
+
+    setExistingCount(0)
+    showToast('Barcha ma‘lumot o‘chirildi')
+  }
 
   const reset = () => {
     setStep('upload')
@@ -158,6 +182,24 @@ export default function DataPage() {
           <div className="rounded-lg border px-4 py-3 text-[12.5px]" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-tertiary)' }}>
             Birinchi qatorda ustun nomlari bo‘lishi kerak (masalan: Sana, Tavsif, Kategoriya, Tur, Summa). Yuklagandan keyin ustunlarni tasdiqlash imkoniyati bo‘ladi.
           </div>
+
+          {existingCount !== null && existingCount > 0 && (
+            <div
+              className="flex flex-col gap-3 rounded-lg border px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+              style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
+            >
+              <p className="text-[13px]" style={{ color: 'var(--text-secondary)' }}>
+                Hozirda bazada <span className="font-mono font-medium" style={{ color: 'var(--text-primary)' }}>{existingCount}</span> ta tranzaksiya bor.
+              </p>
+              <button
+                onClick={() => setConfirmClear(true)}
+                className="w-fit rounded-lg border px-3.5 py-2 text-[12.5px] font-medium"
+                style={{ borderColor: 'var(--danger)', color: 'var(--danger)' }}
+              >
+                Barcha ma‘lumotni o‘chirish
+              </button>
+            </div>
+          )}
         </>
       )}
 
@@ -311,6 +353,36 @@ export default function DataPage() {
                 Umumiy ko‘rinishga o‘tish
               </button>
             )}
+          </div>
+        </div>
+      )}
+
+      {confirmClear && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="w-full max-w-sm rounded-xl border p-6" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+            <p className="font-display text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+              Barcha ma‘lumotni o‘chirasizmi?
+            </p>
+            <p className="mt-2 text-[13px]" style={{ color: 'var(--text-tertiary)' }}>
+              {existingCount} ta tranzaksiya butunlay o‘chiriladi. Bu amalni orqaga qaytarib bo‘lmaydi.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setConfirmClear(false)}
+                className="rounded-lg border px-4 py-2 text-[13px] font-medium"
+                style={{ borderColor: 'var(--border-strong)', color: 'var(--text-secondary)' }}
+              >
+                Bekor qilish
+              </button>
+              <button
+                onClick={handleClearAll}
+                disabled={clearing}
+                className="rounded-lg px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-60"
+                style={{ backgroundColor: 'var(--danger)' }}
+              >
+                {clearing ? 'O‘chirilmoqda…' : 'O‘chirish'}
+              </button>
+            </div>
           </div>
         </div>
       )}

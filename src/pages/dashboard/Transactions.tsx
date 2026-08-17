@@ -1,16 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { fetchTransactions, type Transaction } from '../../lib/business'
+import { useToast } from '../../context/ToastContext'
+import { fetchTransactions, deleteTransaction, type Transaction } from '../../lib/business'
 
 export default function Transactions() {
   const { business } = useAuth()
+  const { showToast } = useToast()
   const [params] = useSearchParams()
   const [transactions, setTransactions] = useState<Transaction[] | null>(null)
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState(params.get('category') ?? '')
   const [type, setType] = useState<'Barchasi' | 'income' | 'expense'>('Barchasi')
   const [page, setPage] = useState(1)
+  const [confirmId, setConfirmId] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const perPage = 8
 
   useEffect(() => {
@@ -27,6 +31,21 @@ export default function Transactions() {
       return true
     })
   }, [transactions, search, category, type])
+
+  const handleDelete = async (id: string) => {
+    setDeleting(true)
+    const { error } = await deleteTransaction(id)
+    setDeleting(false)
+    setConfirmId(null)
+
+    if (error) {
+      showToast('Xatolik yuz berdi', 'error')
+      return
+    }
+
+    setTransactions((prev) => (prev ? prev.filter((t) => t.id !== id) : prev))
+    showToast('Tranzaksiya o‘chirildi')
+  }
 
   if (transactions === null) {
     return (
@@ -95,11 +114,11 @@ export default function Transactions() {
       </div>
 
       <div className="overflow-x-auto rounded-xl border" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
-        <table className="w-full min-w-[560px] text-left text-[13px]">
+        <table className="w-full min-w-[620px] text-left text-[13px]">
           <thead>
             <tr className="border-b" style={{ borderColor: 'var(--border)' }}>
-              {['Sana', 'Tavsif', 'Kategoriya', 'Tur', 'Summa'].map((h) => (
-                <th key={h} className="whitespace-nowrap px-4 py-3 text-[11.5px] font-medium" style={{ color: 'var(--text-tertiary)' }}>
+              {['Sana', 'Tavsif', 'Kategoriya', 'Tur', 'Summa', ''].map((h, i) => (
+                <th key={i} className="whitespace-nowrap px-4 py-3 text-[11.5px] font-medium" style={{ color: 'var(--text-tertiary)' }}>
                   {h}
                 </th>
               ))}
@@ -131,11 +150,23 @@ export default function Transactions() {
                 <td className="font-mono whitespace-nowrap px-4 py-3 font-medium" style={{ color: 'var(--text-primary)' }}>
                   {Math.round(t.amount).toLocaleString('en-US')} {t.currency}
                 </td>
+                <td className="whitespace-nowrap px-4 py-3">
+                  <button
+                    onClick={() => setConfirmId(t.id)}
+                    className="flex h-7 w-7 items-center justify-center rounded-md"
+                    style={{ color: 'var(--text-tertiary)' }}
+                    aria-label="O‘chirish"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                      <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z" />
+                    </svg>
+                  </button>
+                </td>
               </tr>
             ))}
             {paged.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-[13px]" style={{ color: 'var(--text-tertiary)' }}>
+                <td colSpan={6} className="px-4 py-10 text-center text-[13px]" style={{ color: 'var(--text-tertiary)' }}>
                   Hali tranzaksiya yo‘q. Ma‘lumotlar sahifasidan Excel/CSV yuklang.
                 </td>
               </tr>
@@ -166,6 +197,36 @@ export default function Transactions() {
             >
               Keyingi
             </button>
+          </div>
+        </div>
+      )}
+
+      {confirmId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="w-full max-w-sm rounded-xl border p-6" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+            <p className="font-display text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+              Tranzaksiyani o‘chirasizmi?
+            </p>
+            <p className="mt-2 text-[13px]" style={{ color: 'var(--text-tertiary)' }}>
+              Bu amalni orqaga qaytarib bo‘lmaydi.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setConfirmId(null)}
+                className="rounded-lg border px-4 py-2 text-[13px] font-medium"
+                style={{ borderColor: 'var(--border-strong)', color: 'var(--text-secondary)' }}
+              >
+                Bekor qilish
+              </button>
+              <button
+                onClick={() => handleDelete(confirmId)}
+                disabled={deleting}
+                className="rounded-lg px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-60"
+                style={{ backgroundColor: 'var(--danger)' }}
+              >
+                {deleting ? 'O‘chirilmoqda…' : 'O‘chirish'}
+              </button>
+            </div>
           </div>
         </div>
       )}

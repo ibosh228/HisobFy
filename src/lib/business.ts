@@ -207,3 +207,18 @@ export function groupByCategory(transactions: Transaction[], type: 'income' | 'e
     .map(([category, amount]) => ({ category, total: amount, share: total > 0 ? (amount / total) * 100 : 0 }))
     .sort((a, b) => b.total - a.total)
 }
+
+export async function deleteAllTransactions(businessId: string) {
+  const { error } = await supabase.from('transactions').delete().eq('business_id', businessId)
+  return { error }
+}
+
+export async function deleteTransaction(id: string) {
+  const { error } = await supabase.from('transactions').delete().eq('id', id)
+  return { error }
+}
+
+export async function countTransactions(businessId: string): Promise<number> {
+  const { count } = await supabase.from('transactions').select('*', { count: 'exact', head: true }).eq('business_id', businessId)
+  return count ?? 0
+}
