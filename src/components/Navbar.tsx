@@ -16,7 +16,7 @@ function useNavItems(): NavItem[] {
   return [
     { label: 'Xususiyatlar', href: '#xususiyatlar', kind: 'anchor' },
     { label: 'Narxlar', href: '#narxlar', kind: 'anchor' },
-    { label: 'AI', href: '#ai', kind: 'anchor', emphasize: true },
+    { label: 'AI', href: user ? '/dashboard/ai' : '/login', kind: 'link', emphasize: true },
     { label: 'Qanday ishlaydi', href: '#qanday-ishlaydi', kind: 'anchor' },
     { label: 'Kabinet', href: user ? '/dashboard' : '/login', kind: 'link', prominent: true },
     { label: 'Aloqa', href: '#aloqa', kind: 'anchor' },
@@ -26,13 +26,13 @@ function useNavItems(): NavItem[] {
 function NavLinkItem({ item }: { item: NavItem }) {
   if (item.emphasize) {
     return (
-      <a
-        href={item.href}
+      <Link
+        to={item.href}
         className="mx-1 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors duration-200"
         style={{ borderColor: 'var(--accent-border)', color: 'var(--accent)', backgroundColor: 'var(--accent-soft)' }}
       >
         {item.label}
-      </a>
+      </Link>
     )
   }
 
@@ -171,14 +171,20 @@ export default function Navbar() {
                 to={item.href}
                 onClick={() => setMobileOpen(false)}
                 className="flex items-center gap-2 rounded-md px-2 py-2.5 text-sm font-medium"
-                style={{ color: 'var(--text-primary)' }}
+                style={
+                  item.emphasize
+                    ? { color: 'var(--accent)', backgroundColor: 'var(--accent-soft)' }
+                    : { color: 'var(--text-primary)' }
+                }
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <rect x="3" y="3" width="7" height="7" rx="1.5" />
-                  <rect x="14" y="3" width="7" height="7" rx="1.5" />
-                  <rect x="3" y="14" width="7" height="7" rx="1.5" />
-                  <rect x="14" y="14" width="7" height="7" rx="1.5" />
-                </svg>
+                {!item.emphasize && (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <rect x="3" y="3" width="7" height="7" rx="1.5" />
+                    <rect x="14" y="3" width="7" height="7" rx="1.5" />
+                    <rect x="3" y="14" width="7" height="7" rx="1.5" />
+                    <rect x="14" y="14" width="7" height="7" rx="1.5" />
+                  </svg>
+                )}
                 {item.label}
               </Link>
             ) : (

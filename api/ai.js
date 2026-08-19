@@ -80,13 +80,20 @@ Foyda marjasi: ${margin.toFixed(1)}%
 Tranzaksiyalar soni: ${rows.length}
 Eng katta xarajat toifalari: ${topCategories.join(', ') || 'mavjud emas'}`
 
-  const { question } = req.body || {}
+  const { question, history } = req.body || {}
   if (!question || typeof question !== 'string') {
     res.status(400).json({ error: 'Savol kiritilmagan' })
     return
   }
 
-  const systemPrompt = `Siz Hisobfy — biznes uchun moliyaviy tahlilchi AI'siz. Faqat quyida berilgan haqiqiy moliyaviy ma'lumotlar asosida javob bering. Hech qachon raqam yoki tranzaksiya o'ylab topmang. Agar savolga javob berish uchun ma'lumot yetarli bo'lmasa, buni ochiq ayting. Javobingizni O'zbek tilida, qisqa va aniq bering.
+  const priorMessages = Array.isArray(history)
+    ? history
+        .filter((m) => m && typeof m.text === 'string' && (m.role === 'user' || m.role === 'ai'))
+        .slice(-10)
+        .map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text }))
+    : []
+
+  const systemPrompt = `Siz Hisobfy — biznes uchun moliyaviy tahlilchi AI'siz. Faqat quyida berilgan haqiqiy moliyaviy ma'lumotlar asosida javob bering. Hech qachon raqam yoki tranzaksiya o'ylab topmang. Agar savolga javob berish uchun ma'lumot yetarli bo'lmasa, buni ochiq ayting. Suhbat davomida oldingi savol-javoblarni hisobga oling. Javobingizni O'zbek tilida, qisqa va aniq bering.
 
 Biznesning moliyaviy ma'lumotlari:
 ${context}`
@@ -100,10 +107,7 @@ ${context}`
       },
       body: JSON.stringify({
         model: 'gemini-2.5-flash',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: question },
-        ],
+        messages: [{ role: 'system', content: systemPrompt }, ...priorMessages, { role: 'user', content: question }],
         temperature: 0.3,
         max_tokens: 600,
       }),
