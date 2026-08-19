@@ -106,7 +106,7 @@ ${context}`
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gemini-2.5-flash-lite',
+        model: 'gemini-3.5-flash-lite',
         messages: [{ role: 'system', content: systemPrompt }, ...priorMessages, { role: 'user', content: question }],
         temperature: 0.3,
         max_tokens: 600,
