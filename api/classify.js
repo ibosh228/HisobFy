@@ -35,7 +35,7 @@ export default async function handler(req, res) {
 
   const { headers, sampleRows } = req.body || {}
   if (!Array.isArray(headers) || headers.length === 0 || !Array.isArray(sampleRows)) {
-    res.status(400).json({ error: 'Ustun ma\u2018lumotlari yuborilmadi' })
+    res.status(400).json({ error: 'Ustun ma‘lumotlari yuborilmadi' })
     return
   }
 
@@ -88,7 +88,7 @@ Muhim: ustun nomlarini faqat yuqoridagi "Ustunlar" ro'yxatidan aynan tanla, o'zi
     try {
       mapping = JSON.parse(raw)
     } catch {
-      res.status(502).json({ error: 'AI javobini o\u2018qib bo\u2018lmadi' })
+      res.status(502).json({ error: 'AI javobini o‘qib bo‘lmadi' })
       return
     }
 

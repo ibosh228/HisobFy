@@ -34,6 +34,47 @@ export default function AIPage() {
       const { data: sessionData } = await supabase.auth.getSession()
       const token = sessionData.session?.access_token
 
+      // Avval bu xabar tranzaksiya yozuvi emasmi, tekshiramiz (masalan "500000 taksiga ketdi")
+      if (business) {
+        try {
+          const extractRes = await fetch('/api/extract-transaction', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ message: question }),
+          })
+
+          if (extractRes.ok) {
+            const extracted = await extractRes.json()
+            if (extracted.isTransaction) {
+              const { error } = await insertTransactions(business.id, [
+                {
+                  date: extracted.date,
+                  description: extracted.description,
+                  category: extracted.category,
+                  type: extracted.type,
+                  amount: extracted.amount,
+                  currency: 'UZS',
+                },
+              ])
+
+              if (!error) {
+                const typeLabel = extracted.type === 'income' ? 'Daromad' : 'Xarajat'
+                setMessages((m) => [
+                  ...m,
+                  {
+                    role: 'ai',
+                    text: `✅ Yozib qo‘ydim: ${extracted.description} — ${Math.round(extracted.amount).toLocaleString('en-US')} UZS (${typeLabel}, ${extracted.category}, ${extracted.date})`,
+                  },
+                ])
+                return
+              }
+            }
+          }
+        } catch {
+          /* extraction failed, fall through to normal Q&A */
+        }
+      }
+
       const res = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
