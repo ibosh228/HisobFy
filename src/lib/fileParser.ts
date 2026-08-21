@@ -65,3 +65,14 @@ export function guessColumn(headers: string[], field: keyof typeof KEYWORDS): st
   }
   return null
 }
+
+const INCOME_VALUE_KEYWORDS = ['daromad', 'доход', 'income', 'приход', 'sotuv', 'revenue']
+
+export function guessIncomeValue(distinctValues: string[]): string | null {
+  const lower = distinctValues.map((v) => v.toLowerCase())
+  for (const kw of INCOME_VALUE_KEYWORDS) {
+    const idx = lower.findIndex((v) => v.includes(kw))
+    if (idx !== -1) return distinctValues[idx]
+  }
+  return null
+}
