@@ -1,11 +1,21 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { supabase } from '../../lib/supabaseClient'
 import { useAuth } from '../../context/AuthContext'
+import { useToast } from '../../context/ToastContext'
 import { parseFile, guessColumn, guessIncomeValue } from '../../lib/fileParser'
-import { buildTransactionsFromRows, insertTransactions, type ColumnMapping } from '../../lib/business'
+import {
+  buildTransactionsFromRows,
+  insertTransactions,
+  fetchAiMessages,
+  saveAiMessage,
+  updateTransaction,
+  deleteTransaction,
+  fetchTransactionById,
+  type ColumnMapping,
+} from '../../lib/business'
 
-type Msg = { role: 'user' | 'ai'; text: string }
+type Msg = { id?: string; role: 'user' | 'ai'; text: string; transactionId?: string | null; deleted?: boolean }
 
 const suggested = [
   'Foyda qanday?',
@@ -15,81 +25,136 @@ const suggested = [
 ]
 
 const ALLOWED_EXTENSIONS = ['.xlsx', '.csv']
+const PROACTIVE_QUESTION = 'Menga bugungi eng muhim moliyaviy kuzatuvni yoki tendensiyani 2-3 gapda ayting.'
 
 export default function AIPage() {
   const { business } = useAuth()
+  const { showToast } = useToast()
   const [messages, setMessages] = useState<Msg[]>([])
+  const [historyLoaded, setHistoryLoaded] = useState(false)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [importing, setImporting] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editAmount, setEditAmount] = useState('')
+  const [editCategory, setEditCategory] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
 
+  useEffect(() => {
+    if (!business) return
+    fetchAiMessages(business.id).then((rows) => {
+      const loaded: Msg[] = rows.map((r) => ({ id: r.id, role: r.role, text: r.content, transactionId: r.transaction_id }))
+      setMessages(loaded)
+      setHistoryLoaded(true)
+
+      const last = rows[rows.length - 1]
+      const isStale = !last || Date.now() - new Date(last.created_at).getTime() > 12 * 60 * 60 * 1000
+      if (isStale) {
+        runProactiveInsight(business.id)
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [business])
+
+  const runProactiveInsight = async (businessId: string) => {
+    setLoading(true)
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+
+      const res = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ question: PROACTIVE_QUESTION, history: [] }),
+      })
+      const data = await res.json()
+      if (res.ok && data.answer) {
+        const text = `\uD83D\uDCA1 ${data.answer}`
+        const saved = await saveAiMessage(businessId, 'ai', text)
+        setMessages((m) => [...m, { id: saved?.id, role: 'ai', text }])
+      }
+    } catch {
+      /* silent — proactive insight is a nice-to-have, not critical */
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const ask = async (question: string) => {
-    if (!question.trim() || loading) return
+    if (!question.trim() || loading || !business) return
     const newHistory = [...messages, { role: 'user' as const, text: question }]
     setMessages(newHistory)
     setInput('')
     setLoading(true)
+    saveAiMessage(business.id, 'user', question)
 
     try {
       const { data: sessionData } = await supabase.auth.getSession()
       const token = sessionData.session?.access_token
 
-      // Avval bu xabar tranzaksiya yozuvi emasmi, tekshiramiz (masalan "500000 taksiga ketdi")
-      if (business) {
-        try {
-          const extractRes = await fetch('/api/extract-transaction', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ message: question }),
-          })
+      try {
+        const extractRes = await fetch('/api/extract-transaction', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ message: question }),
+        })
 
-          if (extractRes.ok) {
-            const extracted = await extractRes.json()
-            if (extracted.isTransaction) {
-              const { error } = await insertTransactions(business.id, [
-                {
-                  date: extracted.date,
-                  description: extracted.description,
-                  category: extracted.category,
-                  type: extracted.type,
-                  amount: extracted.amount,
-                  currency: 'UZS',
-                },
-              ])
+        if (extractRes.ok) {
+          const extracted = await extractRes.json()
+          if (extracted.isTransaction) {
+            const { error } = await insertTransactions(business.id, [
+              {
+                date: extracted.date,
+                description: extracted.description,
+                category: extracted.category,
+                type: extracted.type,
+                amount: extracted.amount,
+                currency: 'UZS',
+              },
+            ])
 
-              if (!error) {
-                const typeLabel = extracted.type === 'income' ? 'Daromad' : 'Xarajat'
-                setMessages((m) => [
-                  ...m,
-                  {
-                    role: 'ai',
-                    text: `✅ Yozib qo‘ydim: ${extracted.description} — ${Math.round(extracted.amount).toLocaleString('en-US')} UZS (${typeLabel}, ${extracted.category}, ${extracted.date})`,
-                  },
-                ])
-                return
-              }
+            if (!error) {
+              const fresh = await fetchAiMessages(business.id)
+              const lastTx = fresh.length // not reliable for id; fetch newest transaction instead
+              void lastTx
+              const typeLabel = extracted.type === 'income' ? 'Daromad' : 'Xarajat'
+              const confirmText = `\u2705 Yozib qo‘ydim: ${extracted.description} — ${Math.round(extracted.amount).toLocaleString('en-US')} UZS (${typeLabel}, ${extracted.category}, ${extracted.date})`
+
+              // Eng yangi mos tranzaksiyani topamiz (endigina qo'shilgani)
+              const { data: txRows } = await supabase
+                .from('transactions')
+                .select('*')
+                .eq('business_id', business.id)
+                .order('created_at', { ascending: false })
+                .limit(1)
+              const newTxId = txRows?.[0]?.id ?? null
+
+              const saved = await saveAiMessage(business.id, 'ai', confirmText, newTxId)
+              setMessages((m) => [...m, { id: saved?.id, role: 'ai', text: confirmText, transactionId: newTxId }])
+              return
             }
           }
-        } catch {
-          /* extraction failed, fall through to normal Q&A */
         }
+      } catch {
+        /* extraction failed, fall through to normal Q&A */
       }
 
       const res = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ question, history: messages }),
+        body: JSON.stringify({ question, history: messages.map((m) => ({ role: m.role, text: m.text })) }),
       })
 
       const data = await res.json()
 
       if (!res.ok) {
-        setMessages((m) => [...m, { role: 'ai', text: data.error ?? 'Xatolik yuz berdi.' }])
+        const errText = data.error ?? 'Xatolik yuz berdi.'
+        setMessages((m) => [...m, { role: 'ai', text: errText }])
         return
       }
 
-      setMessages((m) => [...m, { role: 'ai', text: data.answer }])
+      const saved = await saveAiMessage(business.id, 'ai', data.answer)
+      setMessages((m) => [...m, { id: saved?.id, role: 'ai', text: data.answer }])
     } catch {
       setMessages((m) => [...m, { role: 'ai', text: 'Server bilan bog‘lanishda xatolik yuz berdi.' }])
     } finally {
@@ -102,18 +167,25 @@ export default function AIPage() {
     const file = fileList[0]
     const ext = '.' + file.name.split('.').pop()?.toLowerCase()
 
+    const pushAi = async (text: string) => {
+      const saved = await saveAiMessage(business.id, 'ai', text)
+      setMessages((m) => [...m, { id: saved?.id, role: 'ai', text }])
+    }
+
     if (!ALLOWED_EXTENSIONS.includes(ext)) {
-      setMessages((m) => [...m, { role: 'ai', text: 'Faqat .xlsx yoki .csv fayllarni qabul qilaman.' }])
+      await pushAi('Faqat .xlsx yoki .csv fayllarni qabul qilaman.')
       return
     }
 
-    setMessages((m) => [...m, { role: 'user', text: `📎 ${file.name}` }])
+    const userText = `\uD83D\uDCCE ${file.name}`
+    saveAiMessage(business.id, 'user', userText)
+    setMessages((m) => [...m, { role: 'user', text: userText }])
     setImporting(true)
 
     try {
       const parsed = await parseFile(file)
       if (parsed.headers.length === 0 || parsed.rows.length === 0) {
-        setMessages((m) => [...m, { role: 'ai', text: 'Faylda ma‘lumot topilmadi. Birinchi qator ustun nomlari bo‘lishi kerak.' }])
+        await pushAi('Faylda ma‘lumot topilmadi. Birinchi qator ustun nomlari bo‘lishi kerak.')
         return
       }
 
@@ -152,12 +224,12 @@ export default function AIPage() {
                 amount: aiMapping.amount,
                 typeMode: 'sign',
               }
-              mappingNote = 'AI ustunlarni tahlil qildi: alohida "Tur" ustuni topilmadi, shuning uchun summa belgisidan foydalandi (musbat = daromad, manfiy = xarajat).'
+              mappingNote = 'AI ustunlarni tahlil qildi: alohida "Tur" ustuni topilmadi, shuning uchun summa belgisidan foydalandi.'
             }
           }
         }
       } catch {
-        /* AI classify failed, fall back below */
+        /* fall back below */
       }
 
       if (!mapping) {
@@ -168,13 +240,7 @@ export default function AIPage() {
         const typeCol = guessColumn(parsed.headers, 'type')
 
         if (!dateCol || !descCol || !amountCol) {
-          setMessages((m) => [
-            ...m,
-            {
-              role: 'ai',
-              text: 'Ustunlarni aniqlay olmadim (Sana, Tavsif yoki Summa topilmadi). Iltimos, "Ma‘lumotlar" sahifasidan yuklang — u yerda ustunlarni qo‘lda moslashtirish mumkin.',
-            },
-          ])
+          await pushAi('Ustunlarni aniqlay olmadim. Iltimos, "Ma‘lumotlar" sahifasidan yuklang — u yerda qo‘lda moslashtirish mumkin.')
           return
         }
 
@@ -197,23 +263,59 @@ export default function AIPage() {
       const { valid, invalidCount } = buildTransactionsFromRows(parsed.rows, mapping)
 
       if (valid.length === 0) {
-        setMessages((m) => [...m, { role: 'ai', text: 'Hech qanday yaroqli qator topilmadi. Faylni "Ma‘lumotlar" sahifasidan qo‘lda moslashtirib yuklab ko‘ring.' }])
+        await pushAi('Hech qanday yaroqli qator topilmadi. Faylni "Ma‘lumotlar" sahifasidan qo‘lda moslashtirib yuklab ko‘ring.')
         return
       }
 
       const { error } = await insertTransactions(business.id, valid)
       if (error) {
-        setMessages((m) => [...m, { role: 'ai', text: 'Ma‘lumotni saqlashda xatolik yuz berdi.' }])
+        await pushAi('Ma‘lumotni saqlashda xatolik yuz berdi.')
         return
       }
 
-      const summary = `${valid.length} ta yozuv muvaffaqiyatli yuklandi.${invalidCount > 0 ? ` ${invalidCount} ta qator o‘tkazib yuborildi (to‘liq emas).` : ''}\n\n${mappingNote}\n\nAgar bu noto‘g‘ri bo‘lsa, "Ma‘lumotlar" sahifasidan o‘chirib, qo‘lda moslashtirib qayta yuklashingiz mumkin. Endi men shu ma‘lumotlar haqida savollaringizga javob bera olaman.`
-      setMessages((m) => [...m, { role: 'ai', text: summary }])
+      const summary = `${valid.length} ta yozuv muvaffaqiyatli yuklandi.${invalidCount > 0 ? ` ${invalidCount} ta qator o‘tkazib yuborildi.` : ''}\n\n${mappingNote}\n\nEndi men shu ma‘lumotlar haqida savollaringizga javob bera olaman.`
+      await pushAi(summary)
     } catch {
-      setMessages((m) => [...m, { role: 'ai', text: 'Faylni o‘qib bo‘lmadi. Format buzilgan bo‘lishi mumkin.' }])
+      await pushAi('Faylni o‘qib bo‘lmadi. Format buzilgan bo‘lishi mumkin.')
     } finally {
       setImporting(false)
     }
+  }
+
+  const openEdit = async (msg: Msg) => {
+    if (!msg.transactionId) return
+    const tx = await fetchTransactionById(msg.transactionId)
+    if (!tx) return
+    setEditingId(msg.transactionId)
+    setEditAmount(String(tx.amount))
+    setEditCategory(tx.category)
+  }
+
+  const saveEdit = async () => {
+    if (!editingId) return
+    const amount = Number(editAmount)
+    if (isNaN(amount) || amount <= 0) {
+      showToast('Summa noto‘g‘ri', 'error')
+      return
+    }
+    const { error } = await updateTransaction(editingId, { amount, category: editCategory })
+    if (error) {
+      showToast('Xatolik yuz berdi', 'error')
+      return
+    }
+    showToast('Tranzaksiya yangilandi')
+    setEditingId(null)
+  }
+
+  const removeTransaction = async (msg: Msg) => {
+    if (!msg.transactionId || !msg.id) return
+    const { error } = await deleteTransaction(msg.transactionId)
+    if (error) {
+      showToast('Xatolik yuz berdi', 'error')
+      return
+    }
+    setMessages((m) => m.map((mm) => (mm.id === msg.id ? { ...mm, deleted: true, transactionId: null } : mm)))
+    showToast('Tranzaksiya o‘chirildi')
   }
 
   return (
@@ -230,29 +332,72 @@ export default function AIPage() {
       </div>
 
       <div className="flex min-h-[200px] flex-col gap-3 rounded-xl border p-5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
-        {messages.length === 0 && (
+        {historyLoaded && messages.length === 0 && (
           <p className="text-[13px]" style={{ color: 'var(--text-tertiary)' }}>
             Biznesingiz haqida savol bering, pastdagi takliflardan birini tanlang, yoki Excel/CSV faylni to‘g‘ridan-to‘g‘ri shu yerga biriktiring.
           </p>
         )}
         {messages.map((m, i) => (
-          <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+          <div key={m.id ?? i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
             <div
               className="max-w-[90%] rounded-lg px-3.5 py-2.5 text-[13px] leading-relaxed"
               style={
                 m.role === 'user'
                   ? { backgroundColor: 'var(--accent)', color: 'white', whiteSpace: 'pre-wrap' }
-                  : { backgroundColor: 'var(--bg-elevated)', color: 'var(--text-primary)', border: '1px solid var(--border)' }
+                  : {
+                      backgroundColor: 'var(--bg-elevated)',
+                      color: m.deleted ? 'var(--text-tertiary)' : 'var(--text-primary)',
+                      border: '1px solid var(--border)',
+                      textDecoration: m.deleted ? 'line-through' : 'none',
+                    }
               }
             >
               {m.role === 'ai' ? (
                 <div className="ai-markdown">
-                  <ReactMarkdown>{m.text}</ReactMarkdown>
+                  <ReactMarkdown>{m.deleted ? `${m.text} (o‘chirildi)` : m.text}</ReactMarkdown>
                 </div>
               ) : (
                 m.text
               )}
             </div>
+            {m.transactionId && !m.deleted && editingId !== m.transactionId && (
+              <div className="mt-1.5 flex gap-3 px-1">
+                <button onClick={() => openEdit(m)} className="text-[11.5px] font-medium" style={{ color: 'var(--accent)' }}>
+                  Tahrirlash
+                </button>
+                <button onClick={() => removeTransaction(m)} className="text-[11.5px] font-medium" style={{ color: 'var(--danger)' }}>
+                  O‘chirish
+                </button>
+              </div>
+            )}
+            {m.transactionId && editingId === m.transactionId && (
+              <div className="mt-2 flex w-full max-w-[90%] flex-col gap-2 rounded-lg border p-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-elevated)' }}>
+                <div className="flex gap-2">
+                  <input
+                    value={editAmount}
+                    onChange={(e) => setEditAmount(e.target.value)}
+                    placeholder="Summa"
+                    className="w-28 rounded-md border px-2 py-1.5 text-[12.5px] outline-none"
+                    style={{ borderColor: 'var(--border-strong)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }}
+                  />
+                  <input
+                    value={editCategory}
+                    onChange={(e) => setEditCategory(e.target.value)}
+                    placeholder="Kategoriya"
+                    className="flex-1 rounded-md border px-2 py-1.5 text-[12.5px] outline-none"
+                    style={{ borderColor: 'var(--border-strong)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }}
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button onClick={() => setEditingId(null)} className="rounded-md border px-3 py-1 text-[12px]" style={{ borderColor: 'var(--border-strong)', color: 'var(--text-secondary)' }}>
+                    Bekor qilish
+                  </button>
+                  <button onClick={saveEdit} className="rounded-md px-3 py-1 text-[12px] font-semibold text-white" style={{ backgroundColor: 'var(--accent)' }}>
+                    Saqlash
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         ))}
         {(loading || importing) && (

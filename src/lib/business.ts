@@ -225,3 +225,47 @@ export async function countTransactions(businessId: string): Promise<number> {
   const { count } = await supabase.from('transactions').select('*', { count: 'exact', head: true }).eq('business_id', businessId)
   return count ?? 0
 }
+
+export interface AiMessage {
+  id: string
+  role: 'user' | 'ai'
+  content: string
+  transaction_id: string | null
+  created_at: string
+}
+
+export async function fetchAiMessages(businessId: string): Promise<AiMessage[]> {
+  const { data } = await supabase
+    .from('ai_messages')
+    .select('*')
+    .eq('business_id', businessId)
+    .order('created_at', { ascending: true })
+  return data ?? []
+}
+
+export async function saveAiMessage(
+  businessId: string,
+  role: 'user' | 'ai',
+  content: string,
+  transactionId: string | null = null
+): Promise<AiMessage | null> {
+  const { data } = await supabase
+    .from('ai_messages')
+    .insert({ business_id: businessId, role, content, transaction_id: transactionId })
+    .select()
+    .single()
+  return data ?? null
+}
+
+export async function updateTransaction(
+  id: string,
+  fields: Partial<Pick<Transaction, 'amount' | 'category' | 'description' | 'type' | 'date'>>
+) {
+  const { error } = await supabase.from('transactions').update(fields).eq('id', id)
+  return { error }
+}
+
+export async function fetchTransactionById(id: string): Promise<Transaction | null> {
+  const { data } = await supabase.from('transactions').select('*').eq('id', id).maybeSingle()
+  return data ?? null
+}
