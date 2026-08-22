@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
 import { supabase } from '../../lib/supabaseClient'
 import { useAuth } from '../../context/AuthContext'
 import { parseFile, guessColumn, guessIncomeValue } from '../../lib/fileParser'
@@ -237,14 +238,20 @@ export default function AIPage() {
         {messages.map((m, i) => (
           <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div
-              className="max-w-[85%] whitespace-pre-wrap rounded-lg px-3.5 py-2.5 text-[13px] leading-relaxed"
+              className="max-w-[90%] rounded-lg px-3.5 py-2.5 text-[13px] leading-relaxed"
               style={
                 m.role === 'user'
-                  ? { backgroundColor: 'var(--accent)', color: 'white' }
+                  ? { backgroundColor: 'var(--accent)', color: 'white', whiteSpace: 'pre-wrap' }
                   : { backgroundColor: 'var(--bg-elevated)', color: 'var(--text-primary)', border: '1px solid var(--border)' }
               }
             >
-              {m.text}
+              {m.role === 'ai' ? (
+                <div className="ai-markdown">
+                  <ReactMarkdown>{m.text}</ReactMarkdown>
+                </div>
+              ) : (
+                m.text
+              )}
             </div>
           </div>
         ))}

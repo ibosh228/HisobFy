@@ -96,7 +96,16 @@ Eng katta xarajat toifalari: ${topCategories.join(', ') || 'mavjud emas'}`
         .map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text }))
     : []
 
-  const systemPrompt = `Siz Hisobfy — biznes uchun moliyaviy tahlilchi AI'siz. Faqat quyida berilgan haqiqiy moliyaviy ma'lumotlar asosida javob bering. Hech qachon raqam yoki tranzaksiya o'ylab topmang. Agar savolga javob berish uchun ma'lumot yetarli bo'lmasa, buni ochiq ayting. Suhbat davomida oldingi savol-javoblarni kontekst uchun hisobga oling, lekin RAQAMLAR uchun HAR DOIM shu xabardagi "Biznesning moliyaviy ma'lumotlari" qismini ishlating — bu eng yangi holat, hatto sizning oldingi javobingizda boshqa raqam aytilgan bo'lsa ham. Ma'lumotlar foydalanuvchi yangi tranzaksiya qo'shgani sababli o'zgargan bo'lishi mumkin. Javobingizni O'zbek tilida, qisqa va aniq bering.
+  const systemPrompt = `Siz Hisobfy — biznes uchun moliyaviy tahlilchi AI'siz. Faqat quyida berilgan haqiqiy moliyaviy ma'lumotlar asosida javob bering. Hech qachon raqam yoki tranzaksiya o'ylab topmang. Agar savolga javob berish uchun ma'lumot yetarli bo'lmasa, buni ochiq ayting. Suhbat davomida oldingi savol-javoblarni kontekst uchun hisobga oling, lekin RAQAMLAR uchun HAR DOIM shu xabardagi "Biznesning moliyaviy ma'lumotlari" qismini ishlating — bu eng yangi holat, hatto sizning oldingi javobingizda boshqa raqam aytilgan bo'lsa ham. Ma'lumotlar foydalanuvchi yangi tranzaksiya qo'shgani sababli o'zgargan bo'lishi mumkin.
+
+Javobingizni Markdown formatida, boy va tushunarli qilib tuzing:
+- Muhim raqamlarni **qalin** qiling.
+- Ro'yxat kerak bo'lsa, bullet point (-) dan foydalaning.
+- Agar savol umumiy tahlil haqida bo'lsa, javobni bo'limlarga ajrating: qisqa xulosa, asosiy ko'rsatkichlar (bullet), va agar mos bo'lsa tavsiya/kuzatuv qismi.
+- Nisbatlarni (masalan foyda marjasi, xarajat/daromad nisbati) hisoblab ko'rsating, ular berilgan ma'lumotlardan aniq chiqarilishi mumkin bo'lsa.
+- Faqat berilgan ma'lumotlardan kelib chiqib xulosa/baho bering (masalan "moliyaviy holat barqaror" yoki "xarajatlar tez o'smoqda") — lekin hech qachon asossiz aniq ball (masalan "8/10") yoki o'ylab topilgan qiyoslash bermang.
+- Oddiy, qisqa savolga (masalan "salom") qisqa javob bering — formatlashni faqat mazmunga mos kelganda ishlating, sun'iy uzaytirmang.
+- Javobingiz O'zbek tilida bo'lsin.
 
 Biznesning moliyaviy ma'lumotlari (hozirgina bazadan yangilangan):
 ${context}`
@@ -112,7 +121,7 @@ ${context}`
         model: 'gemini-3.5-flash-lite',
         messages: [{ role: 'system', content: systemPrompt }, ...priorMessages, { role: 'user', content: question }],
         temperature: 0.3,
-        max_tokens: 600,
+        max_tokens: 1200,
       }),
     })
 

@@ -142,3 +142,50 @@ input:focus-visible {
   background: var(--border-strong);
   border-radius: 999px;
 }
+
+/* AI chat javoblari uchun markdown ko'rinishi */
+.ai-markdown p {
+  margin: 0 0 8px 0;
+}
+.ai-markdown p:last-child {
+  margin-bottom: 0;
+}
+.ai-markdown ul,
+.ai-markdown ol {
+  margin: 4px 0 10px 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ai-markdown li {
+  line-height: 1.5;
+}
+.ai-markdown strong {
+  color: var(--accent);
+  font-weight: 600;
+}
+.ai-markdown h1,
+.ai-markdown h2,
+.ai-markdown h3 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  margin: 10px 0 6px 0;
+  color: var(--text-primary);
+}
+.ai-markdown h1 { font-size: 15px; }
+.ai-markdown h2 { font-size: 14px; }
+.ai-markdown h3 { font-size: 13.5px; }
+.ai-markdown h1:first-child,
+.ai-markdown h2:first-child,
+.ai-markdown h3:first-child {
+  margin-top: 0;
+}
+.ai-markdown code {
+  font-family: var(--font-mono);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12px;
+}
