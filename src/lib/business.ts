@@ -198,13 +198,16 @@ export function groupByCategory(transactions: Transaction[], type: 'income' | 'e
   const filtered = transactions.filter((t) => t.type === type)
   const total = filtered.reduce((sum, t) => sum + Number(t.amount), 0)
   const map = new Map<string, number>()
+  const labels = new Map<string, string>()
 
   for (const t of filtered) {
-    map.set(t.category, (map.get(t.category) ?? 0) + Number(t.amount))
+    const key = t.category.trim().toLowerCase()
+    map.set(key, (map.get(key) ?? 0) + Number(t.amount))
+    if (!labels.has(key)) labels.set(key, t.category.trim())
   }
 
   return Array.from(map.entries())
-    .map(([category, amount]) => ({ category, total: amount, share: total > 0 ? (amount / total) * 100 : 0 }))
+    .map(([key, amount]) => ({ category: labels.get(key)!, total: amount, share: total > 0 ? (amount / total) * 100 : 0 }))
     .sort((a, b) => b.total - a.total)
 }
 

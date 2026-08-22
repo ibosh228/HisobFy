@@ -42,13 +42,19 @@ export default async function handler(req, res) {
 
   const prompt = `Foydalanuvchi xabarini tahlil qil. Bugungi sana: ${today}.
 
-Agar bu xabar bitta aniq moliyaviy tranzaksiya (xarajat yoki daromad) haqida bo'lsa (masalan: "bugun 50000 taksiga ketdi", "200000 sotuvdan tushdi", "500 ming marketingga sarfladim"), quyidagi JSON formatida javob ber:
+Agar bu xabar biror moliyaviy operatsiya (xarajat yoki daromad) haqida bo'lsa \u2014 hatto qisqa yoki fe'lsiz yozilgan bo'lsa ham (masalan: "100000 marketinga", "50 ming taksi", "bugun 50000 taksiga ketdi", "200000 sotuvdan tushdi") \u2014 quyidagi JSON formatida javob ber:
 {"isTransaction": true, "date": "YYYY-MM-DD", "description": "<qisqa tavsif>", "category": "<mos toifa>", "type": "income" yoki "expense", "amount": <faqat son, valyutasiz>}
 
-Agar xabar tranzaksiya bo'lmasa (oddiy savol, salomlashish yoki umumiy gap bo'lsa), faqat shuni qaytar:
+Qoidalar:
+- "100.000", "100,000" va "100 ming" \u2014 bularning barchasi 100000 degani (o'zbek tilida nuqta/vergul minglik ajratgich sifatida ishlatiladi, o'nlik kasr emas). "1 mln" yoki "1 million" \u2014 1000000.
+- Agar xabarda "sarfladim", "ketdi", "to'ladim" kabi so'z bo'lmasa-yu, lekin summa + toifa aniq bo'lsa (masalan "100000 marketinga", "50000 obedga"), buni XARAJAT (expense) deb hisobla \u2014 chunki bunday toifalar odatda xarajat bo'ladi.
+- "tushdi", "sotuvdan", "to'landi (menga)" kabi so'zlar daromadni bildiradi.
+- Aniq sana ko'rsatilmagan bo'lsa, bugungi sanani ishlat.
+
+Agar xabar aniq umuman moliyaviy operatsiya emas bo'lsa (oddiy savol, salomlashish, umumiy gap), faqat shuni qaytar:
 {"isTransaction": false}
 
-Aniq sana ko'rsatilmagan bo'lsa, bugungi sanani ishlat. Faqat JSON qaytar, boshqa hech narsa yozma.
+Faqat JSON qaytar, boshqa hech narsa yozma.
 
 Xabar: "${message}"`
 

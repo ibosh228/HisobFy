@@ -61,14 +61,17 @@ export default async function handler(req, res) {
   const margin = revenue > 0 ? (profit / revenue) * 100 : 0
 
   const categoryTotals = {}
+  const categoryLabels = {}
   for (const t of rows) {
     if (t.type !== 'expense') continue
-    categoryTotals[t.category] = (categoryTotals[t.category] || 0) + Number(t.amount)
+    const key = String(t.category).trim().toLowerCase()
+    categoryTotals[key] = (categoryTotals[key] || 0) + Number(t.amount)
+    if (!categoryLabels[key]) categoryLabels[key] = String(t.category).trim()
   }
   const topCategories = Object.entries(categoryTotals)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
-    .map(([category, total]) => `${category}: ${Math.round(total).toLocaleString('en-US')} UZS`)
+    .map(([key, total]) => `${categoryLabels[key]}: ${Math.round(total).toLocaleString('en-US')} UZS`)
 
   const context =
     rows.length === 0
@@ -93,9 +96,9 @@ Eng katta xarajat toifalari: ${topCategories.join(', ') || 'mavjud emas'}`
         .map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text }))
     : []
 
-  const systemPrompt = `Siz Hisobfy — biznes uchun moliyaviy tahlilchi AI'siz. Faqat quyida berilgan haqiqiy moliyaviy ma'lumotlar asosida javob bering. Hech qachon raqam yoki tranzaksiya o'ylab topmang. Agar savolga javob berish uchun ma'lumot yetarli bo'lmasa, buni ochiq ayting. Suhbat davomida oldingi savol-javoblarni hisobga oling. Javobingizni O'zbek tilida, qisqa va aniq bering.
+  const systemPrompt = `Siz Hisobfy — biznes uchun moliyaviy tahlilchi AI'siz. Faqat quyida berilgan haqiqiy moliyaviy ma'lumotlar asosida javob bering. Hech qachon raqam yoki tranzaksiya o'ylab topmang. Agar savolga javob berish uchun ma'lumot yetarli bo'lmasa, buni ochiq ayting. Suhbat davomida oldingi savol-javoblarni kontekst uchun hisobga oling, lekin RAQAMLAR uchun HAR DOIM shu xabardagi "Biznesning moliyaviy ma'lumotlari" qismini ishlating — bu eng yangi holat, hatto sizning oldingi javobingizda boshqa raqam aytilgan bo'lsa ham. Ma'lumotlar foydalanuvchi yangi tranzaksiya qo'shgani sababli o'zgargan bo'lishi mumkin. Javobingizni O'zbek tilida, qisqa va aniq bering.
 
-Biznesning moliyaviy ma'lumotlari:
+Biznesning moliyaviy ma'lumotlari (hozirgina bazadan yangilangan):
 ${context}`
 
   try {
